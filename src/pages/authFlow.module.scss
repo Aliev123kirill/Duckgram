@@ -8,8 +8,8 @@
 
 @use "../scss/shared" as *;
 
-// Inset and `.btn-icon` box size of the fixed corner buttons (`.closeButton` /
-// `.themeButton`). `.placeholderTop` reuses both to reserve matching clearance.
+// Inset and `.btn-icon` box size of the fixed corner buttons (`.closeButton`).
+// `.placeholderTop` reuses both to reserve matching clearance.
 $corner-button-inset: 24px;
 $corner-button-size: 2.5rem;
 
@@ -37,9 +37,8 @@ $corner-button-size: 2.5rem;
   }
 }
 
-// Floating buttons in the corners of the auth shell:
+// Floating button in the corner of the auth shell:
 // - `.closeButton` — back arrow shown when signing in to a non-primary account.
-// - `.themeButton` — day/night theme toggle (always shown).
 .closeButton,
 .themeButton {
   position: fixed;
@@ -58,17 +57,12 @@ $corner-button-size: 2.5rem;
   left: $corner-button-inset;
 }
 
-.themeButton {
-  right: $corner-button-inset;
-}
-
 // `toIm()` sets `.leaving` on the host when the IM page takes over: the cards
 // are instantly hidden behind `#page-chats`, but these fixed buttons sit above
 // it (z-index: 100) — fade them out instead of letting them linger until the
 // host is disposed ~1s later.
 .leaving {
-  .closeButton,
-  .themeButton {
+  .closeButton {
     opacity: 0;
     pointer-events: none;
   }

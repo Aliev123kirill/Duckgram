@@ -486,12 +486,12 @@
   --chat-padding-top: calc(var(--chat-topbar-height) + var(--page-chats-padding) + var(--pinned-floating-height));
   --chat-padding-bottom: calc(var(--chat-input-height) + var(--page-chats-padding) + var(--chat-input-height-surplus));
   --chat-input-background: var(--surface-color);
+	position: relative;
 	display: flex !important;
 	width: 100%;
 	align-items: center;
 	flex-direction: column;
 	transition: transform var(--tabs-transition), opacity var(--tabs-transition);
-
 	@include animation-level(0) {
 		transition: none !important;
 	}
@@ -534,6 +534,40 @@
       top: calc(var(--chat-padding-top) + 3.75rem);
     }
   }
+}
+
+.chat .empty-chat-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--tabs-transition), visibility var(--tabs-transition);
+
+  &.active {
+    opacity: 1;
+    visibility: visible;
+  }
+}
+
+.chat .empty-chat-placeholder-sticker {
+  max-width: 55%;
+  max-height: 55%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.chat .empty-chat-placeholder-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--secondary-text-color);
+  text-align: center;
 }
 
 .chat-input-wrapper {

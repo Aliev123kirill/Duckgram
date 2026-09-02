@@ -289,7 +289,11 @@ declare global {
   };
 
   const electronHelpers: {
+    isElectron: true,
     openExternal(url): void;
+    setBadgeCount?(count: number): void;
+    setNotificationSoundState?(enabled: boolean): void;
+    onSetNotificationSound?(callback: (enabled: boolean) => void): () => void;
   } | undefined;
 
   type DOMRectMinified = {top: number, right: number, bottom: number, left: number};

@@ -16,6 +16,8 @@ import {IS_WEB_WORKER} from '@helpers/context';
 import {DcId} from '@types';
 import {getEnvironment} from '@environment/utils';
 import SocketProxied from '@lib/mtproto/transports/socketProxied';
+import {getProxyUrlForDc, getProxySecret} from '@lib/proxyUrl';
+import TcpObfuscatedProxy from '@lib/mtproto/transports/tcpObfuscatedProxy';
 
 export type TransportType = 'websocket' | 'https' | 'http';
 export type ConnectionType = 'client' | 'download' | 'upload';
@@ -39,6 +41,12 @@ export function getTelegramConnectionSuffix(connectionType: ConnectionType) {
 export function constructTelegramWebSocketUrl(dcId: DcId, connectionType: ConnectionType, premium?: boolean) {
   if(!import.meta.env.VITE_MTPROTO_HAS_WS) {
     return;
+  }
+
+  // If a proxy URL is configured, use it instead of direct Telegram connection
+  const proxyUrl = getProxyUrlForDc(dcId, connectionType, premium);
+  if(proxyUrl) {
+    return proxyUrl;
   }
 
   const suffix = getTelegramConnectionSuffix(connectionType);
@@ -82,6 +90,11 @@ export class DcConfigurator {
       oooohLetMeLive = Socket;
     } else {
       oooohLetMeLive = (getEnvironment().IS_SAFARI && IS_WEB_WORKER && typeof(SocketProxied) !== 'undefined') /* || true */ ? SocketProxied : Socket;
+    }
+
+    const proxySecret = getProxySecret();
+    if(proxySecret) {
+      return new TcpObfuscatedProxy(oooohLetMeLive, dcId, chosenServer, proxySecret, connectionType, logSuffix, retryTimeout);
     }
 
     return new TcpObfuscated(oooohLetMeLive, dcId, chosenServer, logSuffix, retryTimeout);

@@ -8,6 +8,7 @@ import MediaHeader from '@components/mediaHeader';
 import TelInputField from '@components/telInputField';
 import IS_TOUCH_SUPPORTED from '@environment/touchSupport';
 import App from '@config/app';
+import mediaSizes from '@helpers/mediaSizes';
 import cancelEvent from '@helpers/dom/cancelEvent';
 import focusWhenConnected from '@helpers/dom/focusWhenConnected';
 import placeCaretAtEnd from '@helpers/dom/placeCaretAtEnd';
@@ -37,6 +38,8 @@ type Spec = Extract<CardSpec, {name: 'signIn'}>;
  */
 export default function SignInCard(_props: {spec: Spec}) {
   const {managers, navigate, toIm} = useAuthFlow();
+
+  const stickerSize = mediaSizes.isMobile ? 100 : 130;
 
   let cancelled = false;
 
@@ -241,11 +244,9 @@ export default function SignInCard(_props: {spec: Spec}) {
         <MediaHeader>
           <MediaHeader.Sticker
             class={styles.logoContainer}
-            size={120}
+            size={stickerSize}
             element={
-              <svg class={styles.logo} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160">
-                <use href="#logo"/>
-              </svg>
+              <img class={styles.logo} src="assets/img/AnimatedStickerLogin.gif" alt="" />
             }
           />
           <MediaHeader.Title>{i18n('Login.Title')}</MediaHeader.Title>

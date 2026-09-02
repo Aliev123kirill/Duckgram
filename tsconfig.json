@@ -107,6 +107,7 @@
     ".claude",
     "public",
     "dist",
+    "electron-dist",
     "coverage",
     "src/scripts",
     "src/solid",

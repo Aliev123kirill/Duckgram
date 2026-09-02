@@ -11,7 +11,7 @@ import findUpTag from '@helpers/dom/findUpTag';
 import {toastNew} from '@components/toast';
 import PopupMute from '@components/popups/mute';
 import {AppManagers} from '@lib/managers';
-import {CAN_HIDE_TOPIC, FOLDER_ID_ARCHIVE, GENERAL_TOPIC_ID, REAL_FOLDER_ID, REAL_FOLDERS} from '@appManagers/constants';
+import {CAN_HIDE_TOPIC, FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, FOLDER_ID_PINNED, GENERAL_TOPIC_ID, REAL_FOLDER_ID, REAL_FOLDERS} from '@appManagers/constants';
 import showLimitPopup from '@components/popups/limit';
 import createContextMenu from '@helpers/dom/createContextMenu';
 import PopupElement from '@components/popups';
@@ -165,8 +165,9 @@ export default class DialogsContextMenu {
           return false;
         }
 
-        const isPinned = this.filterId !== undefined && this.filterId > 1 ?
-          (await this.managers.appMessagesManager.getFilter(this.filterId)).pinnedPeerIds.includes(this.dialog.peerId) :
+        const filterId = await this.getRealPinFilterId();
+        const isPinned = filterId !== undefined && !REAL_FOLDERS.has(filterId) ?
+          (await this.managers.appMessagesManager.getFilter(filterId)).pinnedPeerIds.includes(this.dialog.peerId) :
           !!this.dialog.pFlags?.pinned;
         return !isPinned;
       }
@@ -185,8 +186,9 @@ export default class DialogsContextMenu {
           return false;
         }
 
-        const isPinned = this.filterId !== undefined && this.filterId > 1 ?
-          (await this.managers.appMessagesManager.getFilter(this.filterId)).pinnedPeerIds.includes(this.dialog.peerId) :
+        const filterId = await this.getRealPinFilterId();
+        const isPinned = filterId !== undefined && !REAL_FOLDERS.has(filterId) ?
+          (await this.managers.appMessagesManager.getFilter(filterId)).pinnedPeerIds.includes(this.dialog.peerId) :
           !!this.dialog.pFlags?.pinned;
         return isPinned;
       }
@@ -332,27 +334,56 @@ export default class DialogsContextMenu {
   };
 
   private onPinClick = () => {
-    const {peerId, filterId, threadId, dialog} = this;
+    const {peerId, threadId, dialog} = this;
     const isSaved = isSavedDialog(dialog);
-    this.managers.appMessagesManager.toggleDialogPin({
-      peerId,
-      filterId,
-      topicOrSavedId: threadId
-    }).catch(async(err: ApiError) => {
-      if(err.type === 'PINNED_DIALOGS_TOO_MUCH' || err.type === 'PINNED_TOO_MUCH') {
-        if(isSaved) {
-          showLimitPopup('savedPin');
-        } else if(threadId) {
-          this.managers.apiManager.getLimit('topicPin').then((limit) => {
-            toastNew({langPackKey: 'LimitReachedPinnedTopics', langPackArguments: [limit]});
-          });
-        } else if(!REAL_FOLDERS.has(filterId)) {
-          toastNew({langPackKey: 'PinFolderLimitReached'});
-        } else {
-          showLimitPopup('pin');
+    this.getRealPinFilterId().then((filterId) => {
+      this.managers.appMessagesManager.toggleDialogPin({
+        peerId,
+        filterId,
+        topicOrSavedId: threadId
+      }).catch(async(err: ApiError) => {
+        if(err.type === 'PINNED_DIALOGS_TOO_MUCH' || err.type === 'PINNED_TOO_MUCH') {
+          if(isSaved) {
+            showLimitPopup('savedPin');
+          } else if(threadId) {
+            this.managers.apiManager.getLimit('topicPin').then((limit) => {
+              toastNew({langPackKey: 'LimitReachedPinnedTopics', langPackArguments: [limit]});
+            });
+          } else if(!REAL_FOLDERS.has(filterId)) {
+            toastNew({langPackKey: 'PinFolderLimitReached'});
+          } else {
+            showLimitPopup('pin');
+          }
         }
-      }
+      });
     });
+  };
+
+  /**
+   * While viewing the "Pinned" tab the active filter is the synthetic
+   * FOLDER_ID_PINNED. Resolve it to the real folder that actually holds the
+   * pin (main list first, then the folder whose pinnedPeerIds contain the chat).
+   */
+  private async getRealPinFilterId(): Promise<number> {
+    const {filterId, peerId} = this;
+    if(filterId !== FOLDER_ID_PINNED) {
+      return filterId;
+    }
+
+    const mainPinned = (await this.managers.dialogsStorage.getPinnedOrders(FOLDER_ID_ALL)).includes(peerId);
+    if(mainPinned) {
+      return FOLDER_ID_ALL;
+    }
+
+    const filters = await this.managers.filtersStorage.getFilters();
+    for(const id in filters) {
+      const filter = filters[id];
+      if(!REAL_FOLDERS.has(filter.id) && filter.pinnedPeerIds?.includes(peerId)) {
+        return filter.id;
+      }
+    }
+
+    return FOLDER_ID_ALL;
   };
 
   private onUnmuteClick = () => {

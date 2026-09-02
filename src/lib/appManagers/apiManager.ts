@@ -137,6 +137,19 @@ export class ApiManager extends ApiManagerMethods {
       });
     });
 
+    this.rootScope.addEventListener('proxy_url_change', () => {
+      // the proxy URL/secret changed — rebuild websocket transports so the
+      // new proxy (or the direct connection after disabling) takes effect
+      this.iterateNetworkers(({networker, dcId, connectionType, transportType}) => {
+        if(transportType !== 'websocket') {
+          return;
+        }
+
+        const transport = this.chooseServer(dcId, connectionType, transportType);
+        this.changeNetworkerTransport(networker, transport);
+      });
+    });
+
     return result;
   }
 

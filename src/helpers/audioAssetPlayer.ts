@@ -37,7 +37,8 @@ export default class AudioAssetPlayer<AssetMap extends Record<string, string>> {
     try {
       const audio = this.createAudio();
       audio.autoplay = true;
-      audio.src = ASSETS_PATH + this.assets[options.name];
+      const asset = this.assets[options.name];
+      audio.src = asset.startsWith('blob:') || asset.startsWith('data:') ? asset : ASSETS_PATH + asset;
       audio.loop = options.loop ?? false;
       audio.volume = options.volume ?? 1;
       audio.setAttribute('name', options.name as string);

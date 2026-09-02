@@ -307,6 +307,9 @@ export default class FiltersStorage extends AppManager {
 
   public async toggleDialogPin(peerId: PeerId, filterId: number) {
     const filter = this.filters[filterId];
+    if(!filter) {
+      return;
+    }
 
     const index = filter.pinnedPeerIds.indexOf(peerId);
     const wasPinned = index !== -1;
@@ -317,10 +320,6 @@ export default class FiltersStorage extends AppManager {
     }
 
     if(!wasPinned) {
-      if(filter.pinned_peers.length >= (await this.apiManager.getLimit('folderPin'))) {
-        return Promise.reject(makeError('PINNED_DIALOGS_TOO_MUCH'));
-      }
-
       filter.pinned_peers.unshift(this.appPeersManager.getInputPeerById(peerId));
       filter.pinnedPeerIds.unshift(peerId);
     }

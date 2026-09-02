@@ -11,7 +11,6 @@ import PopupElement, {createPopup} from '@components/popups/indexTsx';
 import {AvatarNewTsx} from '@components/avatarNew';
 import {ChatBackground as ChatBackgroundLayer} from '@components/chat/bubbles/chatBackground';
 import Section from '@components/section';
-import {IconTsx} from '@components/iconTsx';
 import {i18n} from '@lib/langPack';
 import rootScope from '@lib/rootScope';
 import themeController from '@helpers/themeController';
@@ -25,18 +24,48 @@ import classNames from '@helpers/string/classNames';
 import {BaseTheme, Chat, Theme, User, WallPaper} from '@layer';
 import {AppTheme, DEFAULT_THEME} from '@config/state';
 import {useAppSettings} from '@stores/appSettings';
-import {subscribeOn} from '@helpers/solid/subscribeOn';
 import ChatThemesPicker from '@components/chatThemesPicker';
 
 import styles from './myQrCode.module.scss';
 import {FontFamily, FontWeightBold} from '@config/font';
-import Button from '@components/buttonTsx';
 
 // Geometry numbers are lifted from Telegram-iOS' ChatQrCodeScreen.swift so the
 // card layout matches the iOS sheet 1:1. Source lines are noted next to each
 // constant below.
 const QR_SIZE = 220;        // ChatQrCodeScreen.swift L1970: `imageSide = 220.0`
 const AVATAR_SIZE = 100;    // ChatQrCodeScreen.swift L1968: `avatarSize = 100`
+
+// Duck sticker shown in the middle of the QR code (covers the default logo). The
+// asset lives in public/assets/img and is copied verbatim to dist at build time
+// (scripts/copy-static.mjs), so it works in every build (web + Electron). We
+// preload it lazily and cache the loaded image so repeated popup opens repaint
+// instantly without re-fetching.
+const QR_STICKER_URL = 'assets/img/sticker.webp';
+// Sticker width relative to the QR side; stays inside the "safe" centre that
+// QR error-correction tolerance (level H) preserves for a logo.
+const QR_STICKER_RATIO = 0.38;
+
+const qrStickerImage: HTMLImageElement = (() => {
+  const img = new Image();
+  img.src = QR_STICKER_URL;
+  return img;
+})();
+
+/**
+ * Resolves once the sticker has either loaded or failed, so the QR can repaint
+ * with the sticker the moment it's ready (and never block on it otherwise).
+ */
+function waitQrSticker(): Promise<void> {
+  return new Promise((resolve) => {
+    if(qrStickerImage.complete) {
+      resolve();
+      return;
+    }
+    const done = () => resolve();
+    qrStickerImage.addEventListener('load', done, {once: true});
+    qrStickerImage.addEventListener('error', done, {once: true});
+  });
+}
 
 /**
  * Looks up the (wallpaper, accent_color) pair from a Theme for the popup-local
@@ -116,22 +145,12 @@ function createSharedState(self: User.user, peerId: PeerId = rootScope.myId, ove
     return `https://t.me/c/${peerId.toChatId()}`;
   });
 
-  // The fallback brightness must stay reactive to a GLOBAL theme change while the
-  // popup is open (auto-night by schedule/system, another surface switching
-  // theme). `themeController.isNight()` is a plain method, not a signal, so mirror
-  // it into one off `theme_changed`.
-  const [globalNight, setGlobalNight] = createSignal(themeController.isNight());
-  subscribeOn(rootScope)('theme_changed', () => setGlobalNight(themeController.isNight()));
-
-  // `appSettings.qrCode` is the persisted (across reloads and across accounts
-  // via MTProto state sync) source of truth. `nightMode` falls back to the
-  // global theme's brightness when never explicitly set so the very first open
-  // matches what the user sees in chat. `selectedThemeId === ''` is the
-  // DEFAULT_THEME sentinel — "use the current chat theme's wallpaper".
-  const nightMode = (): boolean => appSettings.qrCode?.nightMode ?? globalNight();
+  // Only dark themes exist now, so the popup always previews its QR card on the
+  // dark wallpaper + chrome. `nightMode` is kept as a stable name so the shared
+  // state consumers (baseTheme, PopupThemeApplier, repaint effect) stay as-is.
+  const nightMode = (): boolean => true;
   const selectedThemeId = (): string => appSettings.qrCode?.selectedThemeId ?? '';
 
-  const setNightMode = (v: boolean) => setAppSettings('qrCode', 'nightMode', v);
   const setSelectedThemeId = (v: string) => setAppSettings('qrCode', 'selectedThemeId', v);
 
   // Mirror of the cloud-themes list so the popup can resolve the active theme's
@@ -181,7 +200,6 @@ function createSharedState(self: User.user, peerId: PeerId = rootScope.myId, ove
     username,
     profileUrl,
     nightMode,
-    setNightMode,
     selectedThemeId,
     setSelectedThemeId,
     baseTheme,
@@ -436,6 +454,21 @@ function TopSection(props: {
       ctx.drawImage(maskedQr, layout.qrX, layout.qrY, layout.qrSize, layout.qrSize);
     }
 
+    // 4b. Duck sticker — sits over the QR's centre logo (the default Telegram
+    // mark baked by qr-code-styling) so the popup is shareable by image. Kept
+    // inside the error-correction-safe centre band; aspect-ratio preserved.
+    if(qrStickerImage.complete && qrStickerImage.naturalWidth > 0 && qrStickerImage.naturalHeight > 0) {
+      const maxSide = layout.qrSize * QR_STICKER_RATIO;
+      const aspect = qrStickerImage.naturalWidth / qrStickerImage.naturalHeight;
+      let w = maxSide;
+      let h = maxSide;
+      if(aspect > 1) h = maxSide / aspect;
+      else w = maxSide * aspect;
+      const cx = layout.qrX + layout.qrSize / 2;
+      const cy = layout.qrY + layout.qrSize / 2;
+      ctx.drawImage(qrStickerImage, cx - w / 2, cy - h / 2, w, h);
+    }
+
     // 5. Username — luminance-clamped wallpaper gradient (same darkenInkStops as
     // the QR ink), so the text reads dark on the white card on every theme.
     // @username for public peers; else the user's first name or the chat title
@@ -516,6 +549,10 @@ function TopSection(props: {
       paint();
     }
   ));
+
+  // Repaint the instant the duck sticker is decodable (load/error both settle),
+  // so neither the visible canvas nor the Copy blob ships without it.
+  waitQrSticker().then(() => paint());
 
   // ChatBackgroundLayer fires onReady after its gradient + pattern canvases
   // are actually painted — push a fresh sync paint so the wallpaper mask
@@ -845,15 +882,14 @@ function composeQrWithGradient(
  * We don't pass an isNight override to `themeController.applyTheme` —
  * modifying the controller's signature would risk breaking the global
  * theme-switch View Transition. Instead we build a *virtual* theme: clone the
- * picked theme, pin its `name` to 'night'/'day' (so applyTheme's internal
- * `themeName` / `isNightThemeName` / `baseColors` lookups all land on the
- * popup-local brightness), and trim `settings[]` to the entry matching the
- * requested base. applyTheme then takes the right path through its normal
- * resolution and CSS variables land on the popup container.
+ * picked theme and pin its `name` to 'night' (only dark themes exist now, so
+ * applyTheme's internal `themeName` / `isNightThemeName` / `baseColors`
+ * lookups land on the dark brightness), and trim `settings[]` to the entry
+ * matching the night base. applyTheme then takes the right path through its
+ * normal resolution and CSS variables land on the popup container.
  */
 function PopupThemeApplier(props: {
-  theme: () => AppTheme | Theme,
-  isNight: () => boolean
+  theme: () => AppTheme | Theme
 }) {
   let sentinel!: HTMLDivElement;
   onMount(() => {
@@ -861,15 +897,13 @@ function PopupThemeApplier(props: {
     if(!container) return;
     createEffect(() => {
       const theme = props.theme();
-      const isNight = props.isNight();
-      const base: BaseTheme['_'] = isNight ? 'baseThemeNight' : 'baseThemeClassic';
       const settings = Array.isArray((theme as Theme).settings) ?
         (theme as Theme).settings :
         undefined;
-      const entry = settings?.find((s) => s.base_theme._ === base) ?? settings?.[0];
+      const entry = settings?.find((s) => s.base_theme._ === 'baseThemeNight') ?? settings?.[0];
       const virtualTheme = {
         ...theme,
-        name: isNight ? 'night' : 'day',
+        name: 'night',
         settings: entry ? [entry] : (theme as Theme).settings
       } as unknown as Theme;
       themeController.applyTheme(virtualTheme, container);
@@ -879,7 +913,7 @@ function PopupThemeApplier(props: {
 }
 
 /**
- * Body slot — header row (close + title + brightness toggle) lives inside the
+ * Body slot — header row (close + title) lives inside the
  * body, not in `<PopupElement.Header>`, so it sits on the same surface as the
  * picker and footer (the registered Header slot is transparent by default,
  * which broke our seamless lower-panel look). Below the row is a Section with
@@ -887,23 +921,16 @@ function PopupThemeApplier(props: {
  */
 function BodySlot(props: {shared: QrPopupShared}) {
   const {
-    selectedThemeId, setSelectedThemeId, baseTheme, nightMode, setNightMode,
+    selectedThemeId, setSelectedThemeId, baseTheme, nightMode,
     activeWallPaper
   } = props.shared;
 
   return (
     <PopupElement.Body>
-      <PopupThemeApplier
-        theme={() => activeWallPaper().theme}
-        isNight={nightMode}
-      />
+      <PopupThemeApplier theme={() => activeWallPaper().theme} />
       <PopupElement.Header>
         <PopupElement.CloseButton />
         <PopupElement.Title class={styles.title}>{i18n('QRCode.Title')}</PopupElement.Title>
-        <Button.Icon
-          icon={nightMode() ? 'darkmode_filled' : 'darkmode'}
-          onClick={() => setNightMode(!nightMode())}
-        />
       </PopupElement.Header>
 
       <Section class={styles.bottomSection} noShadow noMarginBottom>

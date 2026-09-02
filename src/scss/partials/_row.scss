@@ -453,3 +453,31 @@ $row-border-radius: $border-radius-medium;
     }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Duckgram — Ghost Mode (invisible) row: hiding online status / last seen /
+// read receipts. The eye-with-slash icon and row title pick up the accent color
+// while the mode is enabled for a clear, even visual state.
+// ─────────────────────────────────────────────────────────────────────────────
+.ghost-mode-row {
+  &-icon {
+    transition: color var(--transition-standard-in);
+  }
+
+  &.ghost-mode-active.row-with-icon {
+    .row-icon.ghost-mode-icon {
+      color: var(--primary-color);
+    }
+
+    .row-title {
+      color: var(--primary-color);
+    }
+  }
+}
+
+.ghost-mode-warning.row-subtitle {
+  color: var(--secondary-text-color);
+  padding-inline-start: 1rem;
+  border-inline-start: 2px solid rgba(var(--primary-color-rgb), .4);
+}
+

@@ -60,6 +60,12 @@ export async function bootstrapIm(): Promise<void> {
   await doubleRaf();
   document.body.classList.remove('has-auth-pages');
 
+  const appLoading = document.getElementById('app-loading');
+  if(appLoading) {
+    appLoading.classList.add('fade-out');
+    appLoading.addEventListener('transitionend', () => appLoading.remove());
+  }
+
   // Tear down the auth UI 1s after IM appears — same delay the legacy
   // `pageIm.onFirstMount` used so the cross-fade looks right.
   setTimeout(() => {

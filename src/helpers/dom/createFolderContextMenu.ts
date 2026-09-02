@@ -2,7 +2,7 @@ import type {AppManagers} from '@lib/managers';
 import type {AppChatFoldersTab} from '@components/solidJsTabs/tabs';
 import type {AppEditFolderTab} from '@components/solidJsTabs/tabs';
 import type {AppSidebarLeft} from '@components/sidebarLeft';
-import {FOLDER_ID_ALL, REAL_FOLDERS} from '@appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_PINNED, REAL_FOLDERS} from '@appManagers/constants';
 import createContextMenu from '@helpers/dom/createContextMenu';
 import findUpClassName from '@helpers/dom/findUpClassName';
 
@@ -23,6 +23,14 @@ export default function createFolderContextMenu({
 }) {
   async function openSettingsForFilter(filterId: number) {
     if(REAL_FOLDERS.has(filterId)) return;
+
+    if(filterId === FOLDER_ID_PINNED) {
+      appSidebarLeft.closeTabsBefore(() => {
+        appSidebarLeft.createTab(_AppChatFoldersTab).open(_AppChatFoldersTab.getInitArgs());
+      });
+      return;
+    }
+
     const filter = await managers.filtersStorage.getFilter(filterId);
 
     appSidebarLeft.closeTabsBefore(() => {
@@ -38,7 +46,7 @@ export default function createFolderContextMenu({
       onClick: () => {
         openSettingsForFilter(clickFilterId);
       },
-      verify: () => clickFilterId !== FOLDER_ID_ALL
+      verify: () => clickFilterId !== FOLDER_ID_ALL && clickFilterId !== FOLDER_ID_PINNED
     }, {
       icon: 'edit',
       text: 'FilterEditAll',
@@ -47,7 +55,7 @@ export default function createFolderContextMenu({
           appSidebarLeft.createTab(_AppChatFoldersTab).open(_AppChatFoldersTab.getInitArgs());
         });
       },
-      verify: () => clickFilterId === FOLDER_ID_ALL
+      verify: () => clickFilterId === FOLDER_ID_ALL || clickFilterId === FOLDER_ID_PINNED
     }, {
       icon: 'readchats',
       text: 'MarkAllAsRead',
@@ -62,7 +70,7 @@ export default function createFolderContextMenu({
       onClick: () => {
         _AppEditFolderTab.deleteFolder(clickFilterId);
       },
-      verify: () => clickFilterId !== FOLDER_ID_ALL
+      verify: () => clickFilterId !== FOLDER_ID_ALL && clickFilterId !== FOLDER_ID_PINNED
     }],
     listenTo,
     findElement: (e) => findUpClassName(e.target, className),

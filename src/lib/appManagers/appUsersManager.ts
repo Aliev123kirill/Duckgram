@@ -1142,6 +1142,13 @@ export class AppUsersManager extends AppManager {
 
   public updateMyOnlineStatus(offline: boolean) {
     this.setUserStatus(this.getSelf().id, offline);
+
+    // Ghost mode: never tell the server when we come online / go offline, so
+    // last seen stays frozen and no "just logged in/out" activity shows up.
+    if(this.appStateManager.isGhostMode()) {
+      return Promise.resolve();
+    }
+
     return this.apiManager.invokeApiSingle('account.updateStatus', {offline});
   }
 

@@ -34,8 +34,10 @@ import {FOLDER_ID_ALL} from '@appManagers/constants';
 import PasscodeLockScreenController from '@components/passcodeLock/passcodeLockScreenController';
 import {StateSettings} from '@config/state';
 import {useAppSettings} from '@stores/appSettings';
+import setupElectronNotificationSoundSync from '@lib/electronNotificationSound';
 import {unwrap} from 'solid-js/store';
 import AudioAssetPlayer from '@helpers/audioAssetPlayer';
+import {getDuckQuackUrl} from '@helpers/duckSound';
 import {createEffect, createRoot, on} from 'solid-js';
 import appNavigationController from '@components/appNavigationController';
 
@@ -174,11 +176,14 @@ export class UiNotificationsManager {
 
     this.accounts = new Map();
 
+    const duckUrl = getDuckQuackUrl();
     this.audioAssetPlayer = new AudioAssetPlayer({
-      notification: 'notification.mp3'
+      notification: duckUrl
     });
 
     this.appSettings = useAppSettings()[0];
+
+    setupElectronNotificationSoundSync();
 
     // * set listeners
 
@@ -192,10 +197,13 @@ export class UiNotificationsManager {
       this.cancel(str);
     });
 
-    if(this.setAppBadge) {
+    if(this.setAppBadge || typeof electronHelpers !== 'undefined') {
       rootScope.addEventListener('folder_unread', (folder) => {
         if(folder.id === FOLDER_ID_ALL) {
-          this.setAppBadge(folder.unreadUnmutedPeerIds.size);
+          const count = folder.unreadUnmutedPeerIds.size;
+          this.setAppBadge?.(count);
+          // * Electron: taskbar overlay icon (navigator.setAppBadge is a no-op there)
+          electronHelpers?.setBadgeCount?.(count);
         }
       });
     }

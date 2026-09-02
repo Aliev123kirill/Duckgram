@@ -17,17 +17,17 @@
     "description": "Telegram is a cloud-based mobile and desktop messaging app with a focus on security and speed.",
     "icons": [
         {
-            "src": "assets/img/icon_square_192.png?v=jw3mK7G9Ry",
+            "src": "assets/img/icon_square_192.png?v=Duck2",
             "sizes": "192x192",
             "type": "image/png"
         },
         {
-            "src": "assets/img/icon_square_384.png?v=jw3mK7G9Ry",
+            "src": "assets/img/icon_square_384.png?v=Duck2",
             "sizes": "384x384",
             "type": "image/png"
         },
         {
-            "src": "assets/img/icon_square_512.png?v=jw3mK7G9Ry",
+            "src": "assets/img/icon_square_512.png?v=Duck2",
             "sizes": "512x512",
             "type": "image/png"
         }

@@ -315,6 +315,72 @@
   // * Night theme end
 }
 
+// macOS-Sequoia-style "glass" theme. `.night` above already applies the dark
+// palette; this block adds the translucent + backdrop-blur chrome. The
+// translucency comes from the JS theme (colorMap.glass writes
+// --surface-color / --input-search-background-color as 8-digit hexa), so every
+// surface painted with var(--surface-color) is see-through; here we frost the
+// main chrome panels with a backdrop blur over the wallpaper.
+.theme-glass {
+  .topbar,
+  .chat-input-wrapper,
+  .sidebar-left-section,
+  #column-right {
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    backdrop-filter: blur(30px) saturate(1.6);
+  }
+
+  // macOS-mirroring "Reduce transparency": drop the translucency + blur.
+  // (!important because the translucent values come from inline JS styles.)
+  @media (prefers-reduced-transparency: reduce) {
+    --surface-color: #14241A !important;
+    --input-search-background-color: #16281E !important;
+
+    .topbar,
+    .chat-input-wrapper,
+    .sidebar-left-section,
+    #column-right {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  // Browsers without backdrop-filter can't frost the wallpaper — fall back to
+  // opaque surfaces so the chrome stays readable over the busy gradient.
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    --surface-color: #14241A !important;
+    --input-search-background-color: #16281E !important;
+  }
+}
+
+.theme-glassgray {
+  .topbar,
+  .chat-input-wrapper,
+  .sidebar-left-section,
+  #column-right {
+    -webkit-backdrop-filter: blur(30px) saturate(1.6);
+    backdrop-filter: blur(30px) saturate(1.6);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    --surface-color: #1E1E1E !important;
+    --input-search-background-color: #1A1A1A !important;
+
+    .topbar,
+    .chat-input-wrapper,
+    .sidebar-left-section,
+    #column-right {
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    --surface-color: #1E1E1E !important;
+    --input-search-background-color: #1A1A1A !important;
+  }
+}
+
 .chat {
   --message-highlighting-color: hsla(85.5319, 36.9171%, 40.402%, .4);//rgba(77, 142, 80, .4);
   --message-highlighting-hover-color: rgba(var(--message-highlighting-color-rgb), calc(var(--message-highlighting-alpha) + .24));
@@ -1543,6 +1609,19 @@ hr {
   &-background {
     fill: var(--primary-color);
   }
+}
+
+// Эксклюзив Duckgram: стикер-бейдж рядом с именем (альтернатива галочки).
+.duckgram-exclusive-sticker {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-inline-start: .25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  object-fit: contain;
+  vertical-align: middle;
 }
 
 .verified-icon,

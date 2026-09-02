@@ -8,7 +8,7 @@ import pause from '@helpers/schedulers/pause';
 import Animated from '@helpers/solid/animations';
 import classNames from '@helpers/string/classNames';
 import {logger, LogTypes} from '@lib/logger';
-import {REAL_FOLDERS} from '@appManagers/constants';
+import {FOLDER_ID_PINNED, REAL_FOLDERS} from '@appManagers/constants';
 import {useHotReloadGuard} from '@lib/solidjs/hotReloadGuard';
 import type SolidJSHotReloadGuardProvider from '@lib/solidjs/hotReloadGuardProvider';
 import useHasFoldersSidebar from '@stores/foldersSidebar';
@@ -45,6 +45,7 @@ export function FoldersSidebarContent(props: {
 
   const showAddFolders = () => canShowAddFolders() &&
     selectedFolderId() &&
+    selectedFolderId() !== FOLDER_ID_PINNED &&
     !REAL_FOLDERS.has(selectedFolderId()) &&
     folderItems.find((item) => item.id === selectedFolderId())?.chatsCount === 0;
 

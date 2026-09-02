@@ -14,7 +14,6 @@ import {TelegramWebViewTheme} from '@types';
 import windowSize from '@helpers/windowSize';
 import liteMode from '@helpers/liteMode';
 import {useAppSettings} from '@stores/appSettings';
-import {joinDeepPath} from '@helpers/object/setDeepProperty';
 import {logger} from '@lib/logger';
 import pause from '@helpers/schedulers/pause';
 import Transitions, {getTransition} from '@config/transitions';
@@ -106,24 +105,6 @@ const colorMap: {
     [name in AppColorName]?: string
   }
 } = {
-  day: {
-    'primary-color': '#3390ec',
-    'message-out-primary-color': '#5CA853',
-    'message-background-color': '#ffffff',
-    'surface-color': '#ffffff',
-    'danger-color': '#df3f40',
-    'primary-text-color': '#000000',
-    'secondary-text-color': '#707579',
-    'saved-color': '#359AD4',
-    'green-color': '#70b768',
-    // SCSS-side defaults migrated from base.scss :root
-    'background-color': '#f4f4f5',
-    'body-background-color': '#ffffff',
-    'border-color': '#dfe1e5',
-    'secondary-color': '#c4c9cc',
-    'link-color': '#00488f',
-    'input-search-background-color': '#ffffff'
-  },
   night: {
     'primary-color': '#8774E1',
     'message-out-primary-color': '#8774E1',
@@ -141,6 +122,46 @@ const colorMap: {
     'secondary-color': '#707579',
     'link-color': '#8774E1', // SCSS resolves to var(--primary-color)
     'input-search-background-color': '#181818'
+  },
+  glass: {
+    // Dark-green "glass" theme (macOS Sequoia style). Surfaces carry an alpha channel so the
+    // green gradient wallpaper blurs through them (see html.theme-glass in base.scss);
+    // `surface-color` / `input-search-background-color` are translucent, message bubbles and the
+    // body backdrop stay opaque for readability.
+    'primary-color': '#30D158',
+    'message-out-primary-color': '#30D158',
+    'message-background-color': '#1C2B22',
+    'surface-color': '#14241ACC',
+    'danger-color': '#FF453A',
+    'primary-text-color': '#EAF4EC',
+    'secondary-text-color': '#8FA89B',
+    'saved-color': '#30D158',
+    'green-color': '#34C759',
+    'background-color': '#0B1710',
+    'body-background-color': '#08120C',
+    'border-color': '#2A3D31',
+    'secondary-color': '#3E5244',
+    'link-color': '#5EE18A',
+    'input-search-background-color': '#16281ECC'
+  },
+  glassgray: {
+    // Gray "glass" theme — silver/neutral palette with translucent surfaces for
+    // backdrop blur over a cool-gray gradient wallpaper (see html.theme-glassgray in base.scss).
+    'primary-color': '#90CAF9',
+    'message-out-primary-color': '#90CAF9',
+    'message-background-color': '#252525',
+    'surface-color': '#1E1E1ECC',
+    'danger-color': '#FF595A',
+    'primary-text-color': '#E8E8E8',
+    'secondary-text-color': '#9E9E9E',
+    'saved-color': '#90CAF9',
+    'green-color': '#66BB6A',
+    'background-color': '#121212',
+    'body-background-color': '#0E0E0E',
+    'border-color': '#2C2C2C',
+    'secondary-color': '#616161',
+    'link-color': '#90CAF9',
+    'input-search-background-color': '#1A1A1ACC'
   },
   tinted: {
     // base colors ported from Telegram-Android darkblue.attheme (Dark Blue / Tinted)
@@ -166,36 +187,52 @@ const colorMap: {
     'link-color': '#5EABE1',
     'input-search-background-color': '#212D3B'
   },
-  light: {
-    // base colors ported from Telegram-Android day.attheme (Android's "Day" / baseThemeDay)
-    // Distinct from tweb's existing `day` theme (which maps to baseThemeClassic with green outgoing bubbles)
-    // primary ← chat_outBubble (#2D7ED5 — signature Day blue, replaces day's green out-message).
-    'primary-color': '#2D7ED5',
-    'message-out-primary-color': '#2D7ED5',
-    'message-background-color': '#F0F0F0', // chat_inBubble — light gray (vs day's pure white)
-    'surface-color': '#FFFFFF',
-    'danger-color': '#DF3F40',
-    'primary-text-color': '#333333', // windowBackgroundWhiteBlackText
-    'secondary-text-color': '#8C8E91', // windowBackgroundWhiteGrayText
-    'saved-color': '#2D7ED5',
-    'green-color': '#04AC35', // windowBackgroundWhiteGreenText2
-    'background-color': '#F4F4F5',
-    'body-background-color': '#FFFFFF',
-    'border-color': '#DFE1E5',
-    'secondary-color': '#C4C9CC',
-    'link-color': '#238AE3', // windowBackgroundWhiteBlueText
-    'input-search-background-color': '#FFFFFF'
+  verydark: {
+    'primary-color': '#bb86fc',
+    'message-out-primary-color': '#bb86fc',
+    'message-background-color': '#1a1a2e',
+    'surface-color': '#16162a',
+    'danger-color': '#cf6679',
+    'primary-text-color': '#e0e0e0',
+    'secondary-text-color': '#9e9e9e',
+    'saved-color': '#bb86fc',
+    'green-color': '#03dac6',
+    'background-color': '#0a0a12',
+    'body-background-color': '#0a0a12',
+    'border-color': '#1e1e3a',
+    'secondary-color': '#6e6e8a',
+    'link-color': '#bb86fc',
+    'input-search-background-color': '#16162a'
+  },
+  duck: {
+    'primary-color': '#fdd835',
+    'message-out-primary-color': '#fdd835',
+    'message-background-color': '#1a1a1a',
+    'surface-color': '#111111',
+    'danger-color': '#ff5252',
+    'primary-text-color': '#f5f5f5',
+    'secondary-text-color': '#bdbdbd',
+    'saved-color': '#fdd835',
+    'green-color': '#66bb6a',
+    'background-color': '#0a0a0a',
+    'body-background-color': '#0a0a0a',
+    'border-color': '#222222',
+    'secondary-color': '#757575',
+    'link-color': '#ffee58',
+    'input-search-background-color': '#1a1a1a'
   }
 };
 
 const themeNameToBaseTheme: {[name in Exclude<AppTheme['name'], 'system'>]: BaseTheme['_']} = {
-  day: 'baseThemeClassic',
   night: 'baseThemeNight',
-  light: 'baseThemeDay',
-  tinted: 'baseThemeTinted'
+  tinted: 'baseThemeTinted',
+  verydark: 'baseThemeNight',
+  duck: 'baseThemeNight',
+  glass: 'baseThemeNight',
+  glassgray: 'baseThemeNight'
 };
 
-const NIGHT_THEME_NAMES = new Set<AppTheme['name']>(['night', 'tinted']);
+const NIGHT_THEME_NAMES = new Set<AppTheme['name']>(['night', 'tinted', 'verydark', 'duck', 'glass', 'glassgray']);
 
 const log = logger('THEME');
 
@@ -217,23 +254,6 @@ export class ThemeController {
 
     rootScope.addEventListener('theme_changed', () => {
       this.setWorkerThemeParams();
-    });
-
-    // Track the last variant the user explicitly picked on each "side" (dark vs light) so the
-    // burger-menu Dark-Mode toggle can restore the user's last choice instead of always flipping
-    // to the legacy night/day pair. Stored in `settings.lastThemeNames` for persistence; updated
-    // here whenever `settings.theme` changes (radio in General Settings, switchTheme calls).
-    const themeKey = joinDeepPath('settings', 'theme');
-    rootScope.addEventListener('settings_updated', ({key, value}) => {
-      if(key !== themeKey) return;
-      const [, setAppSettings] = useAppSettings();
-      if(value === 'night' || value === 'tinted') {
-        setAppSettings('lastThemeNames', 'dark', value);
-      } else if(value === 'day' || value === 'light') {
-        setAppSettings('lastThemeNames', 'light', value);
-      }
-      // 'system' — don't update either side; burger-menu toggle still falls back to the
-      // most recently picked dark/light variant from before.
     });
   }
 
@@ -268,9 +288,8 @@ export class ThemeController {
     try {
       const darkModeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const checkDarkMode = () => {
-        // const theme = this.getTheme();
-        this.systemTheme = darkModeMediaQuery.matches ? 'night' : 'day';
-        // const newTheme = this.getTheme();
+        // Only dark themes exist now — the System option always resolves to a dark variant.
+        this.systemTheme = 'night';
 
         if(rootScope.myId) {
           rootScope.dispatchEvent('theme_change');
@@ -325,6 +344,10 @@ export class ThemeController {
     colorScheme?.setAttribute('content', isNight ? 'dark' : 'light');
 
     document.documentElement.classList.toggle('night', isNight);
+    // Glass theme opts into the macOS-style translucent panels (backdrop blur + alpha surfaces,
+    // see `html.theme-glass` in base.scss). Only added when glass is the *resolved* theme.
+    document.documentElement.classList.toggle('theme-glass', this.getResolvedThemeName() === 'glass');
+    document.documentElement.classList.toggle('theme-glassgray', this.getResolvedThemeName() === 'glassgray');
     this.setThemeColor();
     const theme = this.getTheme();
     this.applyTheme(theme);
@@ -452,20 +475,10 @@ export class ThemeController {
   }
 
   public async switchTheme(
-    name?: AppTheme['name'],
+    name: AppTheme['name'],
     coordinates?: {x: number, y: number}
   ) {
-    const [appSettings, setAppSettings] = useAppSettings();
-    if(name === undefined) {
-      // Burger-menu Dark-Mode toggle. Resolve to the user's last explicitly-picked variant on the
-      // opposite side so e.g. tinted → classic instead of tinted → day, and back tinted again
-      // instead of falling to night. Defensive: appSettings.lastThemeNames can be missing during
-      // early bootstrap; fall back to the legacy night/day pair in that case.
-      const last = appSettings.lastThemeNames;
-      name = this.isNight() ?
-        (last?.light ?? 'day') :
-        (last?.dark ?? 'night');
-    }
+    const [, setAppSettings] = useAppSettings();
     await setAppSettings('theme', name);
     rootScope.dispatchEvent('theme_change', coordinates);
   }
@@ -481,7 +494,12 @@ export class ThemeController {
   public getResolvedThemeName(): AppTheme['name'] {
     const [appSettings] = useAppSettings();
     const setting = appSettings.theme;
-    return setting === 'system' ? this.systemTheme : setting;
+    if(setting === 'system') {
+      return this.systemTheme; // always dark — only dark themes exist
+    }
+    // Legacy stored state may still hold a removed light theme; fall back to glass.
+    const s = setting as string;
+    return s === 'day' || s === 'light' ? 'glass' : setting;
   }
 
   public getTheme(name: AppTheme['name'] = this.getResolvedThemeName()) {
@@ -497,7 +515,13 @@ export class ThemeController {
   }
 
   public getBaseThemeForName(name: AppTheme['name']): BaseTheme['_'] {
-    return themeNameToBaseTheme[name as Exclude<AppTheme['name'], 'system'>] ??
+    // chatThemesPicker still pins virtual preview names 'day'/'light' (classic/day cloud-wallpaper
+    // variants) even though the app no longer offers light themes — resolve them explicitly so
+    // light-only cloud themes keep rendering their preview.
+    const n = name as string;
+    if(n === 'day') return 'baseThemeClassic';
+    if(n === 'light') return 'baseThemeDay';
+    return themeNameToBaseTheme[n as Exclude<AppTheme['name'], 'system'>] ??
       (this.isNightThemeName(name) ? 'baseThemeNight' : 'baseThemeClassic');
   }
 
@@ -512,7 +536,7 @@ export class ThemeController {
     defaultMixColor?: ColorRgb
   ) {
     const appliedColors: Set<AppColorName> = new Set();
-    const fallbackName: AppTheme['name'] = options.themeName ?? (options.isNight ? 'night' : 'day');
+    const fallbackName: AppTheme['name'] = options.themeName ?? (options.isNight ? 'night' : 'glass');
     return {
       applyAppColor: (_options: Omit<Parameters<ThemeController['applyAppColor']>[0], keyof typeof options>) => {
         appliedColors.add(_options.name);
@@ -558,7 +582,7 @@ export class ThemeController {
     const rgb = hexToRgb(hex);
     const hsla = rgbaToHsla(...rgb);
 
-    const resolvedName: AppTheme['name'] = themeName ?? (isNight ? 'night' : 'day');
+    const resolvedName: AppTheme['name'] = themeName ?? (isNight ? 'night' : 'glass');
     mixColor ??= hexToRgb(colorMap[resolvedName]['surface-color']);
     const lightenedRgb = mixColors(rgb, mixColor, lightenAlpha);
 
@@ -740,7 +764,7 @@ export class ThemeController {
     const themeName = this.getThemeName(theme);
     const isNight = this.isNightThemeName(themeName);
     const themeSettings = this.getThemeSettings(theme, isNight);
-    const baseColors = colorMap[themeName] || colorMap[isNight ? 'night' : 'day'];
+    const baseColors = colorMap[themeName] || colorMap[isNight ? 'night' : 'glass'];
 
     let hsvTemp1 = rgbToHsv(...hexToRgb(baseColors['primary-color'])); // primary base
     let hsvTemp2 = rgbToHsv(...getRgbColorFromTelegramColor(themeSettings.accent_color)); // new primary

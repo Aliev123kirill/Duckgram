@@ -72,6 +72,7 @@ export type BroadcastEvents = {
   'dialog_notify_settings': Dialog | ForumTopic,
   // 'dialog_order': {dialog: Dialog, pos: number},
   'dialogs_multiupdate': Map<PeerId, {dialog?: Dialog, topics?: Map<number, ForumTopic>, saved?: Map<PeerId, SavedDialog>}>,
+  'pinned_dialogs_update': void,
 
 
   'history_append': {storageKey: MessagesStorageKey, message: MyMessage},
@@ -243,6 +244,8 @@ export type BroadcastEvents = {
   'unconfirmed_authorizations_update': UnconfirmedAuthorization[],
 
   'auto_delete_period_update': {peerId: PeerId, period: number},
+
+  'proxy_url_change': string | null,
 };
 
 export type BroadcastEventsListeners = {

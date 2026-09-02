@@ -1021,6 +1021,33 @@
   }
 }
 
+.pinned-limit-stepper {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+
+  .btn-icon {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--secondary-text-color);
+    flex: none;
+
+    &:not(:disabled) {
+      color: var(--primary-text-color);
+    }
+  }
+
+  &-value {
+    min-width: 3.5rem;
+    text-align: center;
+    color: var(--secondary-text-color);
+    font-size: var(--font-size-14);
+    white-space: nowrap;
+  }
+}
+
 .background-container {
   .background {
     &-item {

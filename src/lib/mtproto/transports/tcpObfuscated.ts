@@ -1,7 +1,7 @@
 import Modes from '@config/modes';
 import {logger, LogTypes} from '@lib/logger';
 import MTPNetworker from '@lib/mtproto/networker';
-import Obfuscation from '@lib/mtproto/transports/obfuscation';
+import Obfuscation, {Obfuscator} from '@lib/mtproto/transports/obfuscation';
 import MTTransport, {MTConnection, MTConnectionConstructable} from '@lib/mtproto/transports/transport';
 // import intermediatePacketCodec from '@lib/mtproto/transports/intermediate';
 import abridgedPacketCodec from '@lib/mtproto/transports/abridged';
@@ -13,8 +13,9 @@ import bytesToHex from '@helpers/bytes/bytesToHex';
 import ctx from '@environment/ctx';
 
 export default class TcpObfuscated implements MTTransport {
-  private codec = abridgedPacketCodec;
-  private obfuscation = new Obfuscation();
+  protected codec = abridgedPacketCodec;
+  private _obfuscation: Obfuscator;
+
   public networker: MTPNetworker;
 
   private pending: Array<Partial<{
@@ -36,6 +37,14 @@ export default class TcpObfuscated implements MTTransport {
   private releasingPending: boolean;
 
   // private debugPayloads: MTPNetworker['debugRequests'] = [];
+
+  protected get obfuscation(): Obfuscator {
+    return this._obfuscation ??= this.createObfuscation();
+  }
+
+  protected createObfuscation(): Obfuscator {
+    return new Obfuscation();
+  }
 
   constructor(
     private Connection: MTConnectionConstructable,

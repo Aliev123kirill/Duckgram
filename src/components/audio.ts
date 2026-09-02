@@ -30,15 +30,9 @@ import wrapSentTime from '@components/wrappers/sentTime';
 import getMediaFromMessage from '@appManagers/utils/messages/getMediaFromMessage';
 import appDownloadManager from '@lib/appDownloadManager';
 import wrapPhoto from '@components/wrappers/photo';
-import {doubleRaf} from '@helpers/schedulers';
 import safePlay from '@helpers/dom/safePlay';
-import {_tgico} from '@helpers/tgico';
-import Icon from '@components/icon';
 import setCurrentTime from '@helpers/dom/setCurrentTime';
 import makeError from '@helpers/makeError';
-import {hideToast, toastNew} from '@components/toast';
-import anchorCallback from '@helpers/dom/anchorCallback';
-import PopupPremium from '@components/popups/premium';
 import {Middleware} from '@helpers/middleware';
 
 
@@ -182,61 +176,6 @@ async function wrapVoiceMessage(audioEl: AudioElement) {
   if(audioEl.customAudioToTextButton) {
     audioEl.classList.add('can-transcribe');
     audioEl.append(audioEl.customAudioToTextButton);
-  } else if(audioEl.transcriptionState !== undefined) {
-    audioEl.classList.add('can-transcribe');
-    const speechRecognitionDiv = document.createElement('div');
-    speechRecognitionDiv.classList.add('audio-to-text-button');
-    const speechRecognitionIcon = Icon('transcribe');
-    const speechRecognitionLoader = document.createElement('div');
-    speechRecognitionLoader.classList.add('loader');
-    speechRecognitionLoader.innerHTML = '<svg class="audio-transcribe-outline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 24"><rect class="audio-transcribe-outline-rect" fill="transparent" stroke-width="3" stroke-linejoin="round" rx="6" ry="6" stroke="var(--message-primary-color)" stroke-dashoffset="1" stroke-dasharray="32,68" width="32" height="24"></rect></svg>'
-    speechRecognitionDiv.append(speechRecognitionIcon);
-
-    speechRecognitionDiv.onclick = () => {
-      const speechTextDiv = (findUpClassName(audioEl, 'document-wrapper') || findUpClassName(audioEl, 'quote-text')).querySelector<HTMLElement>('.audio-transcribed-text');
-      if(audioEl.transcriptionState === 0) {
-        if(speechTextDiv) {
-          speechTextDiv.classList.remove('hide');
-          speechRecognitionIcon.classList.remove(_tgico('transcribe'));
-          speechRecognitionIcon.classList.add(_tgico('up'));
-          // TODO: State to enum
-          audioEl.transcriptionState = 2;
-        } else {
-          const message = audioEl.message;
-          if(message.pFlags.is_outgoing) {
-            return;
-          }
-          if(!rootScope.getPremium()) {
-            toastNew({
-              langPackKey: 'AudioAndVideoTranscription.PremiumAlert',
-              langPackArguments: [anchorCallback(() => {
-                hideToast();
-                PopupPremium.show({feature: 'voice_to_text'});
-              })]
-            });
-            return;
-          }
-
-          audioEl.transcriptionState = 1;
-          !speechRecognitionLoader.parentElement && speechRecognitionDiv.append(speechRecognitionLoader);
-          doubleRaf().then(() => {
-            if(audioEl.transcriptionState === 1) {
-              speechRecognitionLoader.classList.add('active');
-            }
-          });
-
-          audioEl.managers.appMessagesManager.transcribeAudio(message).catch(noop);
-        }
-      } else if(audioEl.transcriptionState === 2) {
-        // Hide transcription
-        speechTextDiv.classList.add('hide');
-        speechRecognitionIcon.classList.remove(_tgico('up'));
-        speechRecognitionIcon.classList.add(_tgico('transcribe'));
-        audioEl.transcriptionState = 0;
-      }
-    };
-
-    audioEl.append(speechRecognitionDiv);
   }
 
   let progress = svg as any as HTMLElement, progressLine: MediaProgressLine;

@@ -61,6 +61,7 @@ import useHasFoldersSidebar, {useIsSidebarCollapsed} from '@stores/foldersSideba
 import appNavigationController from '@components/appNavigationController';
 import {preventCrossTabDynamicImportDeadlock} from '@helpers/preventDeadlock';
 import appChatBackground from '@components/chat/bubbles/chatBackground';
+import proxyManager from '@lib/proxyManager';
 
 // import commonStateStorage from '@lib/commonStateStorage';
 // import { STATE_INIT } from '@config/state';
@@ -509,6 +510,7 @@ function setDocumentLangPackProperties(langPack: LangPackDifference.langPackDiff
   });
 
   themeController.setThemeListener();
+  proxyManager.init();
 
   // * fetch lang pack updates
   if((langPack.localVersion !== App.langPackLocalVersion || true) && IS_BETA) {

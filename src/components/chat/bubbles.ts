@@ -137,7 +137,6 @@ import callbackify from '@helpers/callbackify';
 import {avatarNew, findUpAvatar} from '@components/avatarNew';
 import Icon from '@components/icon';
 import apiManagerProxy from '@lib/apiManagerProxy';
-import {_tgico} from '@helpers/tgico';
 import setBlankToAnchor from '@lib/richTextProcessor/setBlankToAnchor';
 import addAnchorListener, {UNSAFE_ANCHOR_LINK_TYPES} from '@helpers/addAnchorListener';
 import {formatDate, formatDaysDuration, formatMonthsDuration} from '@helpers/date';
@@ -1139,71 +1138,6 @@ export default class ChatBubbles {
       const bubble = this.getBubble(makeFullMid(message));
       if(!bubble) return;
       this.setBubbleRepliesCount(bubble, message.replies.replies);
-    });
-
-    this.listenerSetter.add(rootScope)('message_transcribed', ({peerId, mid, text, pending}) => {
-      if(peerId !== this.peerId) return;
-
-      const bubble = this.getBubble(makeFullMid(peerId, mid));
-      if(!bubble) return;
-
-      // TODO: Move it to AudioElement method `finishVoiceTranscription`
-      const audioElement = bubble.querySelector('audio-element') as AudioElement;
-      if(!audioElement) {
-        return;
-      }
-
-      // const scrollSaver = this.createScrollSaver(false);
-      // scrollSaver.save();
-
-      const speechTextDiv = bubble.querySelector('.document-wrapper, .quote-text.has-document') as HTMLElement;
-      const speechRecognitionIcon = audioElement.querySelector('.audio-to-text-button span');
-      const speechRecognitionLoader = audioElement.querySelector('.loader');
-      if(speechTextDiv && speechRecognitionIcon) {
-        let transcribedText = speechTextDiv.querySelector('.audio-transcribed-text');
-        if(!transcribedText) {
-          transcribedText = document.createElement('div');
-          transcribedText.classList.add('audio-transcribed-text');
-          transcribedText.append(document.createTextNode(''));
-
-          if(speechTextDiv.classList.contains('document-wrapper')) {
-            audioElement.after(transcribedText);
-          } else {
-            speechTextDiv.append(transcribedText);
-          }
-
-          if(pending) {
-            const dots = document.createElement('span');
-            dots.classList.add('audio-transcribing-dots');
-            transcribedText.append(dots);
-          }
-        } else if(!pending) {
-          const dots = transcribedText.querySelector('.audio-transcribing-dots');
-          dots?.remove();
-        }
-
-        if(!text && !pending/*  && !transcribedText.classList.contains('has-some-text') */) {
-          transcribedText.replaceChildren(i18n('Chat.Voice.Transribe.Error'));
-          transcribedText.classList.add('is-error');
-        } else if(text) {
-          // transcribedText.classList.add('has-some-text');
-          transcribedText.firstChild.textContent = text;
-        }
-
-        speechRecognitionIcon.classList.remove(_tgico('transcribe'));
-        speechRecognitionIcon.classList.add(_tgico('up'));
-
-        if(!pending && speechRecognitionLoader) {
-          speechRecognitionLoader.classList.remove('active');
-          setTimeout(() => {
-            speechRecognitionLoader.remove();
-          }, 300);
-        }
-
-        audioElement.transcriptionState = 2;
-      }
-
-      // scrollSaver.restore();
     });
 
     this.listenerSetter.add(rootScope)('grouped_edit', ({peerId, messages, deletedMids}) => {

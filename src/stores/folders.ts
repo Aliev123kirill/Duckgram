@@ -2,9 +2,10 @@ import {createEffect, createMemo, createRoot, createSignal, untrack} from 'solid
 import {createStore, reconcile} from 'solid-js/store';
 import indexOfAndSplice from '@helpers/array/indexOfAndSplice';
 import rootScope from '@lib/rootScope';
-import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, REAL_FOLDERS} from '@appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, FOLDER_ID_PINNED, REAL_FOLDERS} from '@appManagers/constants';
 import type {MyDialogFilter} from '@lib/storages/filters';
 import type {AppManagers} from '@lib/managers';
+import getPinnedFilter from '@appManagers/utils/dialogs/getPinnedFilter';
 
 export type StoredFolder = {
   id: number,
@@ -73,9 +74,15 @@ const useFoldersStore = createRoot(() => {
   }
 
   async function updateFolderNotifications(folderId: number) {
-    updateFolderItem(folderId, {
-      notifications: await getNotificationCountForFilter(folderId, rootScope.managers)
-    });
+    const notifications = await getNotificationCountForFilter(folderId, rootScope.managers);
+    updateFolderItem(folderId, {notifications});
+
+    if(folderId === FOLDER_ID_PINNED) {
+      const folder = await rootScope.managers.dialogsStorage.getFolder(folderId);
+      updateFolderItem(folderId, {
+        chatsCount: folder?.dialogs?.length || 0
+      });
+    }
   }
 
   function updateAllFolderNotifications() {
@@ -138,6 +145,8 @@ const useFoldersStore = createRoot(() => {
     indexOfAndSplice(order, FOLDER_ID_ARCHIVE);
 
     const items = [...folderItems];
+    const pinnedItemIndex = items.findIndex((item) => item.id === FOLDER_ID_PINNED);
+    const pinnedItem = pinnedItemIndex !== -1 ? items.splice(pinnedItemIndex, 1)[0] : undefined;
 
     items.sort((a, b) => {
       const aIndex = order.indexOf(a.id);
@@ -148,6 +157,10 @@ const useFoldersStore = createRoot(() => {
 
       return aIndex - bIndex;
     });
+
+    if(pinnedItem) {
+      items.splice(1, 0, pinnedItem);
+    }
 
     setFolderItems(items);
   }
@@ -162,6 +175,7 @@ const useFoldersStore = createRoot(() => {
     const folderFilters = filters.filter((filter) => filter.id !== FOLDER_ID_ARCHIVE);
     const items = await Promise.all(folderFilters.map(makeFolderItemPayload));
     const orderedItems = await getFolderItemsInOrder(items, rootScope.managers);
+    orderedItems.splice(1, 0, await makeFolderItemPayload(getPinnedFilter()));
     setFolderItems(orderedItems);
     initListeners();
   }
@@ -180,6 +194,9 @@ const useFoldersStore = createRoot(() => {
     rootScope.addEventListener('filter_update', (filter) => {
       if(REAL_FOLDERS.has(filter.id)) return;
       updateOrAddFolder(filter);
+      if(filter.id !== FOLDER_ID_PINNED) {
+        updateFolderNotifications(FOLDER_ID_PINNED);
+      }
     });
 
     rootScope.addEventListener('filter_delete', (filter) => {
@@ -190,12 +207,16 @@ const useFoldersStore = createRoot(() => {
       updateItemsOrder(order);
     });
 
+    rootScope.addEventListener('pinned_dialogs_update', () => {
+      updateFolderNotifications(FOLDER_ID_PINNED);
+    });
+
     rootScope.addEventListener('filter_joined', (filter) => {
       setSelectedFolderId(filter.id);
     });
 
     rootScope.addEventListener('premium_toggle', async(isPremium) => {
-      if(isPremium) {
+      if(isPremium || selectedFolderId() === FOLDER_ID_PINNED) {
         return;
       }
 

@@ -2,6 +2,7 @@ import {providedTabs} from '@components/solidJsTabs/providedTabs';
 import {SuperTabProvider} from '@components/solidJsTabs/superTabProvider';
 import {
   AppAddMembersTab,
+  AppAboutTab,
   AppChatBackgroundTab,
   AppDirectMessagesTab,
   AppEditProfileTab,
@@ -26,6 +27,7 @@ export {providedTabs};
 
 export {
   AppAddMembersTab,
+  AppAboutTab,
   AppChatBackgroundTab,
   AppDirectMessagesTab,
   AppEditProfileTab,

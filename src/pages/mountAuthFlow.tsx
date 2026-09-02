@@ -31,6 +31,12 @@ export function mountAuthFlow(authState: MountAuthFlowState): () => void {
     activeDispose();
   }
 
+  const appLoading = document.getElementById('app-loading');
+  if(appLoading) {
+    appLoading.classList.add('fade-out');
+    appLoading.addEventListener('transitionend', () => appLoading.remove());
+  }
+
   navigateAuth(authStateToCardSpec(authState));
 
   // Mount under a fresh container appended to body. `display: contents` lets

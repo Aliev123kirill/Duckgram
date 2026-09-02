@@ -11,8 +11,9 @@ import {
   AppSpeakersAndCameraTab,
   getEditProfileInitArgs
 } from '@components/solidJsTabs';
+import {AppAboutTab} from '@components/solidJsTabs/tabs';
 import lottieLoader from '@lib/lottie/lottieLoader';
-import {AppDataAndStorageTab} from '@components/solidJsTabs/tabs';
+import {AppDataAndStorageTab, AppProxyTab} from '@components/solidJsTabs/tabs';
 import ButtonIcon from '@components/buttonIcon';
 import rootScope from '@lib/rootScope';
 import Row from '@components/rowTsx';
@@ -125,6 +126,7 @@ const Settings = () => {
   const subTabConfigs: SubTabConfig[] = [
     makeSubTabConfig('unmute', 'AccountSettings.Notifications', AppNotificationsTab, tab),
     makeSubTabConfig('data', 'DataSettings', AppDataAndStorageTab, tab),
+    makeSubTabConfig('link', 'Proxy', AppProxyTab, tab),
     makeSubTabConfig('lock', 'AccountSettings.PrivacyAndSecurity', AppPrivacyAndSecurityTab, tab),
     makeSubTabConfig('settings', 'Telegram.GeneralSettingsViewController', AppGeneralSettingsTab, tab),
     makeSubTabConfig('folder', 'AccountSettings.Filters', AppChatFoldersTab, tab),
@@ -258,6 +260,10 @@ const Settings = () => {
           <Row clickable={() => tab.slider.createTab(AppKeyboardShortcutsTab).open()}>
             <Row.Icon icon="keyboard" />
             <Row.Title>{i18n('KeyboardShortcuts.Title')}</Row.Title>
+          </Row>
+          <Row clickable={() => tab.slider.createTab(AppAboutTab).open()}>
+            <Row.Icon icon="info" />
+            <Row.Title>{i18n('AboutTab.Title')}</Row.Title>
           </Row>
         </div>
       </Section>

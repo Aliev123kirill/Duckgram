@@ -2,7 +2,6 @@ import {JSX, Show, createSignal, onCleanup, onMount} from 'solid-js';
 
 import CodeInputFieldCompat from '@components/codeInputField';
 import Icon from '@components/icon';
-import TrackingMonkey from '@components/monkeys/tracking';
 import {wrapEmailPattern} from '@components/popups/emailSetup';
 import {SimpleConfirmationPopup} from '@components/popups/simpleConfirmation';
 import MediaHeader from '@components/mediaHeader';
@@ -33,7 +32,7 @@ type Spec = Extract<CardSpec, {name: 'authCode'}>;
 
 /**
  * Card variant of `pageAuthCode`. Shows the 6-digit code input under either a
- * `TrackingMonkey` (default) or a Jolly Roger lottie (`fragmentSms`). Branches:
+ * duck animation (default) or a Jolly Roger lottie (`fragmentSms`). Branches:
  *
  * - `auth.signIn` → success → IM
  * - `authorizationSignUpRequired` → signUp card
@@ -53,13 +52,12 @@ export default function AuthCodeCard(props: {spec: Spec}) {
   const [sentTypeContent, setSentTypeContent] = createSignal<JSX.Element>();
   const [resetEmailContent, setResetEmailContent] = createSignal<JSX.Element>();
 
-  // Persistent host for the rebuildable monkey/lottie. We hand this to
+  // Persistent host for the rebuildable duck/lottie. We hand this to
   // <MediaHeader.Sticker element={...}>; `rebuildAnimation()` then mutates
   // its children whenever the sentCode type changes.
   const stickerHost = document.createElement('div');
   const stickerSize = mediaSizes.isMobile ? 100 : 130;
 
-  let monkey: TrackingMonkey | undefined;
   let player: LottiePlayer | undefined;
   let resetEmailTimer: number | undefined;
 
@@ -153,7 +151,6 @@ export default function AuthCodeCard(props: {spec: Spec}) {
   /* ---------- animation (rebuilt on every type change) ---------- */
 
   function rebuildAnimation() {
-    monkey?.remove(); monkey = undefined;
     player?.remove(); player = undefined;
     stickerHost.replaceChildren();
 
@@ -173,9 +170,17 @@ export default function AuthCodeCard(props: {spec: Spec}) {
       }).then(() => {});
     }
 
-    monkey = new TrackingMonkey(codeInputField, stickerSize);
-    stickerHost.append(monkey.container);
-    return monkey.load();
+    // * Duckgram brand: show the duck animation instead of the standard monkey
+    const container = document.createElement('div');
+    container.classList.add('media-sticker-wrapper');
+    const img = document.createElement('img');
+    img.src = 'assets/img/AnimatedStickerLogin.gif';
+    img.alt = '';
+    img.style.width = stickerSize + 'px';
+    img.style.height = stickerSize + 'px';
+    container.append(img);
+    stickerHost.append(container);
+    return Promise.resolve();
   }
 
   /* ---------- email reset flow ---------- */
@@ -311,7 +316,6 @@ export default function AuthCodeCard(props: {spec: Spec}) {
   onCleanup(() => {
     cancelFocus?.();
     if(resetEmailTimer) clearTimeout(resetEmailTimer);
-    monkey?.remove();
     player?.remove();
     codeInputField.cleanup();
   });

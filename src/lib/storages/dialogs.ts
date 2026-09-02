@@ -12,7 +12,7 @@ import tsNow from '@helpers/tsNow';
 import SearchIndex from '@lib/searchIndex';
 import {SliceEnd} from '@helpers/slicedArray';
 import {MyDialogFilter} from '@lib/storages/filters';
-import {CAN_HIDE_TOPIC, FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, NULL_PEER_ID, REAL_FOLDERS, REAL_FOLDER_ID, TEST_NO_SAVED} from '@appManagers/constants';
+import {CAN_HIDE_TOPIC, FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, FOLDER_ID_PINNED, NULL_PEER_ID, REAL_FOLDERS, REAL_FOLDER_ID, TEST_NO_SAVED} from '@appManagers/constants';
 import {MaybePromise, Modify, NoneToVoidFunction} from '@types';
 import ctx from '@environment/ctx';
 import AppStorage from '@lib/storage';
@@ -114,6 +114,10 @@ export default class DialogsStorage extends AppManager {
       for(let i = 0; i < dialogs.length; ++i) {
         this.processDialogForFilter(dialogs[i], filter);
       }
+
+      if(!REAL_FOLDERS.has(filter.id) && filter.id !== FOLDER_ID_PINNED) {
+        this.reprocessPinnedFilter();
+      }
     };
 
     this.rootScope.addEventListener('filter_order', () => {
@@ -150,6 +154,7 @@ export default class DialogsStorage extends AppManager {
       }
 
       delete this.folders[filter.id];
+      this.reprocessPinnedFilter();
     });
 
     this.rootScope.addEventListener('dialog_notify_settings', (dialog) => {
@@ -467,6 +472,7 @@ export default class DialogsStorage extends AppManager {
   public getDialogIndexKeyByFilterId(filterId: number) {
     if(this.isVirtualFilter(filterId)) return getDialogIndexKey();
     if(REAL_FOLDERS.has(filterId)) return getDialogIndexKey(filterId as REAL_FOLDER_ID);
+    if(filterId === FOLDER_ID_PINNED) return getDialogIndexKey(FOLDER_ID_PINNED as any);
     const filter = this.filtersStorage.getFilter(filterId);
     return getDialogIndexKey(filter.localId);
   }
@@ -646,6 +652,8 @@ export default class DialogsStorage extends AppManager {
       const filter = filters[id];
       this.processDialogForFilter(dialog, filter, noIndex);
     }
+
+    this.processDialogForPinnedFilter(dialog, noIndex);
     // spentTime += (performance.now() - perf);
     // console.log('generate index time:', spentTime);
   }
@@ -702,6 +710,105 @@ export default class DialogsStorage extends AppManager {
     }
 
     return true;
+  }
+
+  /**
+   * Пиннед чаты со всех списков (главный + все папки) в порядке: сначала
+   * главный список, затем папки в их порядке, внутри — от свежих к старым.
+   */
+  public getPinnedChatsPeerIds() {
+    const order: PeerId[] = [];
+
+    const pushIfNotPresent = (peerId: PeerId) => {
+      if(order.indexOf(peerId) === -1) {
+        order.push(peerId);
+      }
+    };
+
+    for(const peerId of this.getPinnedOrders(FOLDER_ID_ALL)) {
+      pushIfNotPresent(peerId);
+    }
+
+    for(const id in this.filtersStorage.getFilters()) {
+      const filter = this.filtersStorage.getFilter(+id);
+      if(!filter || REAL_FOLDERS.has(filter.id) || filter.id === FOLDER_ID_PINNED) {
+        continue;
+      }
+
+      for(const peerId of filter.pinnedPeerIds || []) {
+        pushIfNotPresent(peerId);
+      }
+    }
+
+    return order;
+  }
+
+  public getPinnedDialogIndex(dialog: AnyDialog) {
+    if(!isDialog(dialog)) {
+      return undefined;
+    }
+
+    const order = this.getPinnedChatsPeerIds();
+    const position = order.indexOf(dialog.peerId);
+    if(position === -1) {
+      return undefined;
+    }
+
+    return this.generateDialogIndex(this.generateDialogPinnedDateByIndex(order.length - 1 - position), true);
+  }
+
+  public processDialogForPinnedFilter(dialog: AnyDialog, noIndex?: boolean) {
+    if(!isDialog(dialog)) {
+      return false;
+    }
+
+    const indexKey = this.getDialogIndexKeyByFilterId(FOLDER_ID_PINNED);
+    const dialogs = this.getFolder(FOLDER_ID_PINNED).dialogs;
+
+    const wasIndex = dialogs.findIndex((dialog1) => dialog1.peerId === dialog.peerId);
+    const wasDialog = dialogs[wasIndex];
+    const wasDialogIndex = this.getDialogIndex(wasDialog, indexKey);
+
+    const newDialogIndex = noIndex ? undefined : this.getPinnedDialogIndex(dialog);
+
+    if(wasDialogIndex === newDialogIndex) {
+      return false;
+    }
+
+    if(wasIndex !== -1) {
+      dialogs.splice(wasIndex, 1);
+    }
+
+    if(newDialogIndex) {
+      setDialogIndex(dialog, indexKey, newDialogIndex);
+      insertInDescendSortedArray(dialogs, dialog, (dialog) => this.getDialogIndex(dialog, indexKey), -1);
+    } else {
+      delete dialog[indexKey];
+    }
+
+    return true;
+  }
+
+  public reprocessPinnedFilter() {
+    const order = this.getPinnedChatsPeerIds();
+    const peerIds = order.slice();
+
+    const currentDialogs = this.getFolderDialogs(FOLDER_ID_PINNED, false);
+    for(let i = 0, length = currentDialogs.length; i < length; ++i) {
+      const peerId = currentDialogs[i].peerId;
+      if(peerIds.indexOf(peerId) === -1) {
+        peerIds.push(peerId);
+      }
+    }
+
+    for(const peerId of peerIds) {
+      const dialog = this.getDialogOnly(peerId);
+      if(dialog) {
+        this.processDialogForPinnedFilter(dialog);
+      }
+    }
+
+    this.rootScope.dispatchEvent('pinned_dialogs_update');
   }
 
   public prepareDialogUnreadCountModifying(dialog: AnyDialog, toggle?: boolean) {
@@ -1622,7 +1729,7 @@ export default class DialogsStorage extends AppManager {
     const isForum = this.isFilterIdForForum(filterId);
     const isBotforum = this.appPeersManager.isBotforum(filterId);
     const isVirtualFilter = this.isVirtualFilter(filterId);
-    if(!isVirtualFilter && !REAL_FOLDERS.has(filterId)) {
+    if(!isVirtualFilter && !REAL_FOLDERS.has(filterId) && filterId !== FOLDER_ID_PINNED) {
       const promises: Promise<any>[] = [];
 
       const fillContactsResult = this.appUsersManager.fillContacts();
@@ -2086,6 +2193,7 @@ export default class DialogsStorage extends AppManager {
       this.generateIndexForDialog(dialog);
     }
 
+    this.reprocessPinnedFilter();
     this.appMessagesManager.scheduleHandleNewDialogs(dialog.peerId, dialog);
   }
 
@@ -2126,6 +2234,8 @@ export default class DialogsStorage extends AppManager {
         this.appMessagesManager.scheduleHandleNewDialogs(dialog.peerId, dialog);
       }
     }
+
+    this.reprocessPinnedFilter();
   }
 
   // only 0 and 1 folders

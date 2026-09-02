@@ -25,6 +25,39 @@ import fastSmoothScroll from '@helpers/fastSmoothScroll';
 import ChatThemesPicker from '@components/chatThemesPicker';
 import ChatBackgroundStore from '@lib/chatBackgroundStore';
 import appDownloadManager from '@lib/appDownloadManager';
+import CheckboxFieldTsx from '@components/checkboxFieldTsx';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section 0 — Ghost Mode (Duckgram unique feature): hides online status, last
+// seen and read receipts. Reading stays local-only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GhostModeSection = () => {
+  const [appSettings, setAppSettings] = useAppSettings();
+
+  return (
+    <Section name="GhostMode.Title">
+      <Row classList={{'ghost-mode-row': true, 'ghost-mode-active': appSettings.ghostMode}}>
+        <Row.Icon icon="eyecross_outline" class="ghost-mode-icon" />
+        <Row.Title>{i18n('GhostMode.Title')}</Row.Title>
+        <Row.CheckboxField>
+          <CheckboxFieldTsx
+            checked={appSettings.ghostMode}
+            onChange={(value) => setAppSettings('ghostMode', value)}
+          />
+        </Row.CheckboxField>
+      </Row>
+      <Row>
+        <Row.Subtitle>{i18n('GhostMode.Subtitle')}</Row.Subtitle>
+      </Row>
+      <Show when={appSettings.ghostMode}>
+        <Row>
+          <Row.Subtitle class="ghost-mode-warning">{i18n('GhostMode.Warning')}</Row.Subtitle>
+        </Row>
+      </Show>
+    </Section>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Section 1 — text size, chat background, animations toggle, lite mode entry
@@ -101,11 +134,12 @@ const SettingsSection = () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const THEME_VARIANTS: [StateSettings['theme'], LangPackKey][] = [
-  ['day', 'ThemeDay'],
   ['night', 'ThemeNight'],
-  ['light', 'ThemeLight'],
   ['tinted', 'ThemeTinted'],
-  ['system', 'AutoNightSystemDefault']
+  ['verydark', 'ThemeVeryDark'],
+  ['duck', 'ThemeDuck'],
+  ['glass', 'ThemeGlass'],
+  ['glassgray', 'ThemeGlassGray']
 ];
 
 const ThemeSection = () => {
@@ -139,17 +173,17 @@ const ThemeSection = () => {
     }
   });
 
-  // Theme variant rows (day / night / light / tinted / system) — imperative
+  // Theme variant rows (verydark / night / duck / tinted / glass) — imperative
   // RadioFields with stateKey for two-way state binding. They share `name`
   // which radio-groups them in the DOM.
   const radios = THEME_VARIANTS.map(([value, langKey]) =>
     new RadioField({langKey, name: 'theme', value, stateKey})
   );
 
-  // Accent-color picker is Dark-only: only `baseThemeTinted` has the per-base wallpaper map and
-  // surface-derivation formulas wired up (see themeController + themePresets). For day/night/light
-  // the picker would render but selections wouldn't visually behave — hide and grow-height-reveal
-  // when the user actually lands on Dark.
+  // Accent-color picker works on `baseThemeTinted`: it has the per-base wallpaper map and
+  // surface-derivation formulas wired up (see themeController + themePresets). For other bases the
+  // picker would render but selections wouldn't visually behave — hide and grow-height-reveal
+  // when the user actually lands on Tinted.
   const [isDark, setIsDark] = createSignal(themeController.getResolvedThemeName() === 'tinted');
   subscribeOn(rootScope)('theme_changed', () => setIsDark(themeController.getResolvedThemeName() === 'tinted'));
 
@@ -344,6 +378,7 @@ const TimeFormatSection = () => {
 const GeneralSettings = () => {
   return (
     <>
+      <GhostModeSection />
       <SettingsSection />
       <ThemeSection />
       {IS_GEOLOCATION_SUPPORTED && <DistanceUnitsSection />}

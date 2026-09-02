@@ -3,10 +3,10 @@ import Tabs from '@components/tabs';
 import wrapFolderTitle from '@components/wrappers/folderTitle';
 import documentFragmentToNodes from '@helpers/dom/documentFragmentToNodes';
 import createMiddleware from '@helpers/solid/createMiddleware';
-import {FOLDER_ID_ALL} from '@lib/appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_PINNED} from '@lib/appManagers/constants';
 import {i18n} from '@lib/langPack';
 import useFolders from '@stores/folders';
-import {For} from 'solid-js';
+import {For, Show} from 'solid-js';
 
 export default function FoldersTabs(props: {
   scrollableProps?: Partial<Parameters<typeof Tabs.MenuScrollable>[0]>,
@@ -19,6 +19,10 @@ export default function FoldersTabs(props: {
     const title = () => {
       if(item.id === FOLDER_ID_ALL) {
         return i18n('FilterAllChatsShort');
+      }
+
+      if(item.id === FOLDER_ID_PINNED) {
+        return i18n('PinnedChatsShort');
       }
 
       const fragment = wrapFolderTitle(
@@ -37,13 +41,15 @@ export default function FoldersTabs(props: {
         <span class="text-super">
           {title()}
         </span>
-        <Badge
-          tag="div"
-          size={20}
-          color={item.notifications.muted ? 'gray' : 'primary'}
-        >
-          {item.notifications.count}
-        </Badge>
+        <Show when={item.id !== FOLDER_ID_PINNED}>
+          <Badge
+            tag="div"
+            size={20}
+            color={item.notifications.muted ? 'gray' : 'primary'}
+          >
+            {item.notifications.count}
+          </Badge>
+        </Show>
       </Tabs.MenuTab>
     );
   };

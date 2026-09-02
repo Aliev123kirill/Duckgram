@@ -132,6 +132,15 @@
       font-size: var(--size);
     }
 
+    &-image-icon {
+      width: var(--size);
+      height: var(--size);
+      object-fit: cover;
+      border-radius: 50%;
+
+      pointer-events: none;
+    }
+
     &-animated-icon {
       position: relative;
       width: var(--size);

@@ -1,5 +1,5 @@
 
-import {FOLDER_ID_ALL} from '@appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_PINNED} from '@appManagers/constants';
 import type {AppManagers} from '@lib/managers';
 import {MyDialogFilter} from '@lib/storages/filters';
 import {DialogFilter} from '@layer';
@@ -27,6 +27,7 @@ export function getFolderTitle(filter: MyDialogFilter) {
     icon: getIconForFilter(filter),
     ...titleRest,
     ...iconRest,
+    imageIcon: filter.id === FOLDER_ID_PINNED ? 'assets/img/favorite_chats_duck.png' : undefined,
     dontAnimate: !!filter?.pFlags?.title_noanimate
   };
 }

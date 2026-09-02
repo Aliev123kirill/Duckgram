@@ -6,6 +6,7 @@ import rootScope from '@lib/rootScope';
 import generateFakeIcon from '@components/generateFakeIcon';
 import generatePremiumIcon from '@components/generatePremiumIcon';
 import generateVerifiedIcon from '@components/generateVerifiedIcon';
+import {isDuckgramExclusivePeer, DUCKGRAM_EXCLUSIVE_STICKER_URL} from '@components/duckgramExclusive';
 import PopupElement from '@components/popups';
 import PopupPremium from '@components/popups/premium';
 import PopupStarGiftInfo from '@components/popups/starGiftInfo';
@@ -104,6 +105,16 @@ export default async function generateTitleIcons({
 
   if((peer as Chat.channel).pFlags.verified && !noVerifiedIcon) {
     elements.push(generateVerifiedIcon());
+  }
+
+  // Эксклюзив Duckgram: «альтернатива галочки» — для владельцев клиента рядом с
+  // именем показывается стикер sticker1.webp вместо/в дополнение к verified.
+  if(isDuckgramExclusivePeer(peer)) {
+    const sticker = document.createElement('img');
+    sticker.className = 'duckgram-exclusive-sticker';
+    sticker.src = DUCKGRAM_EXCLUSIVE_STICKER_URL;
+    sticker.alt = '';
+    elements.push(sticker);
   }
 
   if(peer?._ === 'channel' && peer.pFlags?.monoforum && !noDirectMessagesBadge) {

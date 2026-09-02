@@ -38,6 +38,14 @@ export default class AppStateManager {
     return Promise.resolve(this.state);
   }
 
+  public isGhostMode() {
+    return !!this.state.settings?.ghostMode;
+  }
+
+  public isNoAds() {
+    return this.state.settings?.noAds !== false;
+  }
+
   public setByKey(key: string, value: any) {
     setDeepProperty(this.state, key, value);
 

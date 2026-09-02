@@ -33,7 +33,6 @@ import indexOfAndSplice from '@helpers/array/indexOfAndSplice';
 import ListenerSetter from '@helpers/listenerSetter';
 import formatNumber from '@helpers/number/formatNumber';
 import {AppManagers} from '@lib/managers';
-import themeController from '@helpers/themeController';
 import contextMenuController from '@helpers/contextMenuController';
 import appDialogsManager, {DIALOG_LIST_ELEMENT_TAG} from '@lib/appDialogsManager';
 import apiManagerProxy from '@lib/apiManagerProxy';
@@ -875,25 +874,9 @@ export class AppSidebarLeft extends SidebarSlider {
     {middleware}: CreateSubmenuArgs,
     closeTabsBefore: (clb: () => void) => void
   ) {
-    const toggleTheme = () => {
-      const item = btns[0].element;
-      const icon = item.querySelector('.tgico');
-      const rect = icon.getBoundingClientRect();
-      themeController.switchTheme(undefined, {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2
-      });
-    };
-
-    const darkModeText = document.createElement('span');
-    darkModeText.append(i18n(themeController.isNight() ? 'DisableDarkMode': 'EnableDarkMode'));
     const animationsText = document.createElement('span');
 
     const btns: ButtonMenuItemOptionsVerifiable[] = [{
-      icon: 'darkmode',
-      regularText: darkModeText,
-      onClick: () => {}
-    }, {
       id: 'animations-toggle',
       icon: 'animations',
       regularText: animationsText,
@@ -938,6 +921,19 @@ export class AppSidebarLeft extends SidebarSlider {
         const a = document.createElement('a');
         setBlankToAnchor(a);
         a.href = 'https://bugs.telegram.org/?tag_ids=40&sort=time';
+        document.body.append(a);
+        a.click();
+        setTimeout(() => {
+          a.remove();
+        }, 0);
+      }
+    }, {
+      icon: 'savedmessages',
+      regularText: 'About Duckgram',
+      onClick: () => {
+        const a = document.createElement('a');
+        setBlankToAnchor(a);
+        a.href = 'https://duckgram.app';
         document.body.append(a);
         a.click();
         setTimeout(() => {
@@ -1005,13 +1001,6 @@ export class AppSidebarLeft extends SidebarSlider {
 
     menu.append(getVersionLink());
     menu.classList.add('sidebar-tools-submenu');
-
-    const darkModeBtn = btns[0].element;
-    darkModeBtn.addEventListener(CLICK_EVENT_NAME, (e) => {
-      e.stopPropagation();
-      toggleTheme();
-      pause(20).then(() => contextMenuController.close());
-    }, true);
 
     initAnimationsToggleIcon();
 
@@ -1668,7 +1657,7 @@ function getVersionLink() {
   });
   const t = document.createElement('span');
   t.classList.add('btn-menu-footer-text');
-  t.textContent = `Telegram Web${App.suffix} ${App.version} (${App.build})`;
+  t.textContent = `Duckgram ${App.version} (${App.build})`;
   btnMenuFooter.append(t);
 
   return btnMenuFooter;

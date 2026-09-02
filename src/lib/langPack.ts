@@ -1,7 +1,8 @@
 import type lang from '@/lang';
 import type langSign from '@/langSign';
+import langCustom from '@/langCustom';
 import type {State} from '@config/state';
-import {IS_BETA, MOUNT_CLASS_TO} from '@config/debug';
+import {MOUNT_CLASS_TO} from '@config/debug';
 import {HelpCountry, LangPackDifference, LangPackString} from '@layer';
 import App from '@config/app';
 import rootScope from '@lib/rootScope';
@@ -73,7 +74,6 @@ export type FormatterArgument = string | number | Node | FormatterArgument[];
 export type FormatterArguments = FormatterArgument[];
 
 export const UNSUPPORTED_LANG_PACK_KEY: LangPackKey = IS_MOBILE ? 'Message.Unsupported.Mobile' : 'Message.Unsupported.Desktop';
-const TEST_LOCAL = IS_BETA && true;
 
 namespace I18n {
   export const strings: Map<LangPackKey, LangPackString> = new Map();
@@ -239,9 +239,8 @@ namespace I18n {
         formatLocalStrings(l.default as any, strings);
       });
 
-      if(!TEST_LOCAL) pushLocal();
+      pushLocal();
       strings = strings.concat(...[langPack1.strings, langPack2.strings].filter(Boolean));
-      if(TEST_LOCAL) pushLocal();
 
       langPack1.strings = strings;
       langPack1.countries = countries;
@@ -310,6 +309,18 @@ namespace I18n {
           });
         }
       });
+    }
+
+    const customStrings = langCustom[lastRequestedNormalizedLangCode];
+    if(customStrings) {
+      for(const key in customStrings) {
+        const value = customStrings[key];
+        if(typeof(value) === 'string') {
+          strings.set(key as LangPackKey, {_: 'langPackString', key, value});
+        } else {
+          strings.set(key as LangPackKey, {_: 'langPackStringPluralized', key, ...value});
+        }
+      }
     }
 
     if(lastAppliedLangCode !== currentLangCode) {

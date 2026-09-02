@@ -1,43 +1,36 @@
-const compression = require('compression');
 const express = require('express');
-const https = require('https');
-const http = require('http');
+const path = require('path');
 const fs = require('fs');
 
 const app = express();
+const PORT = process.env.PORT || 8080;
+const DIST = path.join(__dirname, 'dist');
 
-const thirdTour = process.argv[2] == 3;
-const forcePort = process.argv[3];
-const useHttp = process.argv[4] !== 'https';
-
-const publicFolderName = thirdTour ? 'public3' : 'public';
-const serveDist = process.argv.includes('--dist');
-const indexFolderName = serveDist ? 'dist' : publicFolderName;
-const port = forcePort ? +forcePort : (thirdTour ? 8443 : 80);
-
-app.set('etag', false);
-app.use((req, res, next) => {
-  res.set('Cache-Control', 'no-store');
-  next();
-});
-app.use(compression());
-if(serveDist) {
-  app.use(express.static('dist'));
-}
-app.use(express.static(publicFolderName));
-
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + `/${indexFolderName}/index.html`);
-});
-
-const server = useHttp ? http : https;
-
-let options = {};
-if(!useHttp) {
-  options.key = fs.readFileSync(__dirname + '/certs/server-key.pem');
-  options.cert = fs.readFileSync(__dirname + '/certs/server-cert.pem');
+if(!fs.existsSync(DIST)) {
+  console.error('❌ dist/ not found. Run: pnpm build');
+  process.exit(1);
 }
 
-server.createServer(options, app).listen(port, () => {
-  console.log('Listening port:', port, 'folder:', indexFolderName);
+// SPA fallback — serve index.html for all non-file routes
+const indexHtml = fs.readFileSync(path.join(DIST, 'index.html'), 'utf-8');
+
+app.use(express.static(DIST, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders(res, filePath) {
+    // Don't cache index.html
+    if(filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  }
+}));
+
+// SPA fallback
+app.get('*', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(indexHtml);
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🦆 Duckgram server running at http://localhost:${PORT}`);
 });

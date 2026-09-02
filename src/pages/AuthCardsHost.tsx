@@ -7,7 +7,6 @@ import loadFonts from '@helpers/dom/loadFonts';
 import {doubleRaf} from '@helpers/schedulers';
 import pause from '@helpers/schedulers/pause';
 import classNames from '@helpers/string/classNames';
-import themeController from '@helpers/themeController';
 import {changeAccount} from '@lib/accounts/changeAccount';
 import {getCurrentAccount} from '@lib/accounts/getCurrentAccount';
 import {getValidatedAccount} from '@lib/accounts/getValidatedAccount';
@@ -102,18 +101,6 @@ export default function AuthCardsHost(): JSX.Element {
     await bootstrapIm();
   }
 
-  /* ---------- theme toggle (mirrors sidebarLeft "Dark mode" menu item) ---------- */
-
-  function toggleTheme(e: MouseEvent) {
-    const target = e.currentTarget as HTMLElement;
-    const icon = target.querySelector('.tgico') ?? target;
-    const rect = icon.getBoundingClientRect();
-    themeController.switchTheme(undefined, {
-      x: rect.left + rect.width / 2,
-      y: rect.top + rect.height / 2
-    });
-  }
-
   /* ---------- enter animation (was in src/index.ts) ---------- */
 
   async function runEnterSequence() {
@@ -157,7 +144,6 @@ export default function AuthCardsHost(): JSX.Element {
         {showBackButton && (
           <Button.Icon icon="back" class={styles.closeButton} onClick={back} />
         )}
-        <Button.Icon icon="darkmode_filled" class={styles.themeButton} onClick={toggleTheme} />
         <Scrollable
           ref={scrollableEl}
           class={classNames(

@@ -102,6 +102,7 @@ export default class Chat extends EventListenerBase<{
   public inputFilter: RequestHistoryOptions['inputFilter'];
   public hashtagType: 'this' | 'my' | 'public';
   public peerIdSignal: Signal<PeerId>;
+  private emptyChatPlaceholder: HTMLDivElement;
   public chatPaddingTop: Signal<number>;
   public chatPaddingBottom: Signal<number>;
 
@@ -254,6 +255,33 @@ export default class Chat extends EventListenerBase<{
     this.chatPaddingTop = createSignal(0);
     this.chatPaddingBottom = createSignal(0);
     this.recomputePaddings();
+
+    // Empty-state placeholder: animated sticker centered in the middle column
+    // while no chat is open (peerId is falsy).
+    if(!this.excludeParts.elements && this.container) {
+      this.emptyChatPlaceholder = document.createElement('div');
+      this.emptyChatPlaceholder.classList.add('empty-chat-placeholder');
+
+      const emptySticker = document.createElement('img');
+      emptySticker.classList.add('empty-chat-placeholder-sticker');
+      emptySticker.src = 'assets/img/AnimatedSticker.gif';
+      emptySticker.alt = '';
+
+      const emptyTitle = document.createElement('div');
+      emptyTitle.classList.add('empty-chat-placeholder-title');
+      emptyTitle.textContent = 'Duckgram';
+
+      this.emptyChatPlaceholder.append(emptySticker, emptyTitle);
+      this.container.append(this.emptyChatPlaceholder);
+
+      createRoot((dispose) => {
+        this.destroyMiddlewareHelper.onDestroy(dispose);
+        createEffect(() => {
+          const peerId = this.peerIdSignal[0]();
+          this.emptyChatPlaceholder.classList.toggle('active', !peerId);
+        });
+      });
+    }
 
     this.sharedMediaTabs = [];
 

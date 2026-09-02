@@ -926,7 +926,12 @@ export default class ChatRecording {
     if(type === 'video' && !this.videoRecorder) return;
     this.isStartingRecording = true;
     const promise = type === 'video' ? this.startVideoRecording() : this.startVoiceRecording();
-    Promise.resolve(promise).catch(() => {}).finally(() => {
+    Promise.resolve(promise).catch((err) => {
+      console.error('ChatRecording: failed to start', type, 'recording:', err);
+      // The input was locked at the beginning of the start flow - unlock it,
+      // otherwise the user is stuck with a dead input until the chat changes.
+      this.input.chatInput.classList.remove('is-locked');
+    }).finally(() => {
       this.isStartingRecording = false;
     });
   }

@@ -1,8 +1,13 @@
 allowBuilds:
   '@parcel/watcher@2.6.0': true
   'cpu-features@0.0.10': true
+  electron-winstaller: set this to true or false
   'esbuild@0.27.4': true
+  protobufjs: false
+  sharp: false
   'ssh2@1.17.0': true
+  'electron@43.2.0': true
+  'electron-winstaller@5.4.0': true
 minimumReleaseAgeExclude:
   - 'baseline-browser-mapping@2.11.0'
   - 'browserslist@4.28.7'

@@ -39,7 +39,7 @@ import windowSize from '@helpers/windowSize';
 import isInDOM from '@helpers/dom/isInDOM';
 import {setSendingStatus} from '@components/sendingStatus';
 import {SortedElementBase} from '@helpers/sortedList';
-import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, NULL_PEER_ID, REAL_FOLDERS} from '@appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, FOLDER_ID_PINNED, NULL_PEER_ID, REAL_FOLDERS} from '@appManagers/constants';
 import groupCallActiveIcon from '@components/groupCallActiveIcon';
 import {ChatlistsChatlistUpdates, DialogFilter, Message, MessageMedia, MessageReplyHeader} from '@layer';
 import mediaSizes from '@helpers/mediaSizes';
@@ -85,6 +85,7 @@ import {render} from 'solid-js/web';
 import {avatarNew} from '@components/avatarNew';
 import Icon from '@components/icon';
 import {isDialog, isForumTopic, isMonoforumDialog, isSavedDialog} from '@appManagers/utils/dialogs/isDialog';
+import getPinnedFilter from '@appManagers/utils/dialogs/getPinnedFilter';
 import {ChatType} from '@components/chat/chatType';
 import rtmpCallsController from '@lib/calls/rtmpCallsController';
 import IS_LIVE_STREAM_SUPPORTED from '@environment/liveStreamSupport';
@@ -1031,6 +1032,10 @@ export class AppDialogsManager {
         this.addFilter(filter);
       }
 
+      if(!this.filtersRendered[FOLDER_ID_PINNED]) {
+        this.addFilter(getPinnedFilter());
+      }
+
       await untrack(() => hydrateFilters(filters));
     };
 
@@ -1252,9 +1257,12 @@ export class AppDialogsManager {
       return;
     }
 
+    // The pinned tab lives right after "All Chats" (index 1) regardless of its localId.
+    const position = id === FOLDER_ID_PINNED ? 1 : filter.localId;
+
     const renderedFilter = this.filtersRendered[id];
     if(renderedFilter) {
-      positionElementByIndex(renderedFilter.container, this.folders.container, filter.localId);
+      positionElementByIndex(renderedFilter.container, this.folders.container, position);
       return;
     }
 
@@ -1278,7 +1286,7 @@ export class AppDialogsManager {
 
     const div = scrollable.container;
     // this.folders.container.append(div);
-    positionElementByIndex(scrollable.container, this.folders.container, filter.localId);
+    positionElementByIndex(scrollable.container, this.folders.container, position);
 
     this.filtersRendered[id] = {
       id,
@@ -1347,10 +1355,6 @@ export class AppDialogsManager {
   }
 
   private checkIfPlaceholderNeeded() {
-    if(this.filterId === FOLDER_ID_ARCHIVE) {
-      return;
-    }
-
     const chatList = this.chatList;
     const part = chatList.parentElement as HTMLElement;
     let placeholderContainer = (Array.from(part.children) as HTMLElement[]).find((el) => el.matches('.empty-placeholder'));
@@ -1369,8 +1373,23 @@ export class AppDialogsManager {
       return;
     }
 
-    let placeholder: ReturnType<AppDialogsManager['generateEmptyPlaceholder']>, type: 'dialogs' | 'folder';
-    if(!this.filterId) {
+    let placeholder: ReturnType<AppDialogsManager['generateEmptyPlaceholder']>, type: 'dialogs' | 'folder' | 'archive';
+    if(this.filterId === FOLDER_ID_ARCHIVE) {
+      placeholder = this.generateEmptyPlaceholder({
+        title: 'Archive.Empty.Title',
+        subtitle: 'Archive.Empty.Subtitle',
+        classNameType: type = 'archive'
+      });
+
+      placeholderContainer = placeholder.container;
+
+      const img = document.createElement('img');
+      img.classList.add('empty-placeholder-dialogs-icon');
+
+      renderImageFromUrlPromise(img, 'assets/img/archive_duck.png');
+
+      placeholderContainer.prepend(img);
+    } else if(!this.filterId) {
       placeholder = this.generateEmptyPlaceholder({
         title: 'ChatList.Main.EmptyPlaceholder.Title',
         classNameType: type = 'dialogs'

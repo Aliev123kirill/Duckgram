@@ -102,7 +102,7 @@ export class AppBackgroundTab {
     const themeName: AppTheme['name'] =
       forBaseTheme === 'baseThemeTinted' ? 'tinted' :
       forBaseTheme === 'baseThemeNight' ? 'night' :
-      'day';
+      'night';
     const theme = {name: themeName} as AppTheme;
 
     const deferred = deferredPromise<void>();

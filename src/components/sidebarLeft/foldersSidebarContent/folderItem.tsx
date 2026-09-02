@@ -72,18 +72,30 @@ export default function FolderItem(props: FolderItemProps) {
       onClick={props.onClick}
     >
       <Show
-        when={showCustomIcon()}
-        fallback={<IconTsx icon={props.icon} class="folders-sidebar__folder-item-icon" />}
+        when={props.imageIcon}
+        fallback={(
+          <Show
+            when={showCustomIcon()}
+            fallback={<IconTsx icon={props.icon} class="folders-sidebar__folder-item-icon" />}
+          >
+            <FolderAnimatedIcon
+              docId={props.iconDocId}
+              emoji={props.emojiIcon}
+              color={props.selected ? 'primary-color' : 'folders-sidebar-item-color'}
+              managers={rootScope.managers}
+              size={ICON_SIZE}
+              class="folders-sidebar__folder-item-animated-icon"
+              onFail={() => setFailedToFetchIconDoc(true)}
+              dontAnimate={props.dontAnimate}
+            />
+          </Show>
+        )}
       >
-        <FolderAnimatedIcon
-          docId={props.iconDocId}
-          emoji={props.emojiIcon}
-          color={props.selected ? 'primary-color' : 'folders-sidebar-item-color'}
-          managers={rootScope.managers}
-          size={ICON_SIZE}
-          class="folders-sidebar__folder-item-animated-icon"
-          onFail={() => setFailedToFetchIconDoc(true)}
-          dontAnimate={props.dontAnimate}
+        <img
+          class="folders-sidebar__folder-item-image-icon"
+          src={props.imageIcon}
+          alt=""
+          draggable={false}
         />
       </Show>
       <Show when={title()}>

@@ -6,7 +6,16 @@ import {Codec} from '@lib/mtproto/transports/codec';
 /*
 @cryptography/aes не работает с массивами которые не кратны 4, поэтому использую intermediate а не abridged
 */
-export default class Obfuscation {
+
+export interface Obfuscator {
+  init(codec: Codec): Promise<Uint8Array>;
+  encode(payload: Uint8Array): Promise<Uint8Array>;
+  decode(payload: Uint8Array): Promise<Uint8Array>;
+  release(): Promise<void>;
+  destroy(): void;
+}
+
+export default class Obfuscation implements Obfuscator {
   /* private enc: aesjs.ModeOfOperation.ModeOfOperationCTR;
   private dec: aesjs.ModeOfOperation.ModeOfOperationCTR; */
 

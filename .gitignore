@@ -2,6 +2,7 @@ node_modules
 coverage
 __pycache__
 /dist
+/electron-dist
 **/.DS_Store
 stats.json
 certs
@@ -27,5 +28,5 @@ ignore
 /test-results/
 /playwright-report/
 /blob-report/
-
+.env
 .claude/bugs-cache

@@ -6,6 +6,7 @@ export type FolderItemPayload = Partial<StoredFolder> & {
   icon: Icon,
   iconDocId?: DocId,
   emojiIcon?: string,
+  imageIcon?: string,
   dontAnimate?: boolean,
   name?: JSX.Element,
   title?: TextWithEntities.textWithEntities

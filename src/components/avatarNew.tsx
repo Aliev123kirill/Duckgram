@@ -1021,7 +1021,10 @@ export const AvatarNew = (props: {
 
   const inner = (
     <>
-      {icon() && Icon(icon(), 'avatar-icon', 'avatar-icon-' + icon())}
+      {icon() && (icon() === 'saved' ?
+        <img class="avatar-icon avatar-icon-saved" src="assets/img/duck-saved.png" draggable="false" /> :
+        Icon(icon(), 'avatar-icon', 'avatar-icon-' + icon())
+      )}
       {thumb()}
       {[media(), abbreviature()].find(Boolean)}
       {video()}

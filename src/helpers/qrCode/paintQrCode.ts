@@ -65,9 +65,9 @@ export async function paintQrCode(options: PaintQrOptions) {
     image: logoUrl,
     dotsOptions: {color: foreground, type: 'rounded'},
     cornersSquareOptions: {type: 'extra-rounded', color: foreground},
-    imageOptions: {imageSize: 1, margin: 0},
+    imageOptions: {imageSize: 0.35, margin: 4},
     backgroundOptions: {color: background},
-    qrOptions: {errorCorrectionLevel: 'L'}
+    qrOptions: {errorCorrectionLevel: 'H'}
   });
 
   qrCode.append(host);

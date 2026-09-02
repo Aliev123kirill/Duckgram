@@ -66,7 +66,6 @@ import {LOCAL_ENTITIES} from '@lib/richTextProcessor';
 import {isDialog, isSavedDialog, isForumTopic, isMonoforumDialog} from '@appManagers/utils/dialogs/isDialog';
 import getDialogKey from '@appManagers/utils/dialogs/getDialogKey';
 import getHistoryStorageKey, {getSearchStorageFilterKey} from '@appManagers/utils/messages/getHistoryStorageKey';
-import {ApiLimitType} from '@appManagers/apiManagerMethods';
 import getFwdFromName from '@appManagers/utils/messages/getFwdFromName';
 import filterUnique from '@helpers/array/filterUnique';
 import getSearchType from '@appManagers/utils/messages/getSearchType';
@@ -608,6 +607,10 @@ export class AppMessagesManager extends AppManager {
   private checklistBatcher: Batcher<string, {taskId: number, oldItem?: TodoCompletion, action: 'complete' | 'uncomplete'}, void>;
 
   private waitingTranscriptions: Map<string, CancellablePromise<MessagesTranscribedAudio>>;
+  // Non-premium users get a limited number of free transcriptions per week; the
+  // server reports the remaining count only in the direct transcribeAudio
+  // response, so stash it here until the final (non-pending) update arrives.
+  private trialTranscriptions: Map<string, Partial<MessagesTranscribedAudio.messagesTranscribedAudio>> = new Map();
   private paidMessagesQueue = new PaidMessagesQueue;
 
   public repayRequestHandler: RepayRequestHandler;
@@ -1232,6 +1235,13 @@ export class AppMessagesManager extends AppManager {
     const {id, peerId} = message;
 
     const process = (result: MessagesTranscribedAudio) => {
+      if(result.trial_remains_num !== undefined || result.trial_remains_until_date !== undefined) {
+        this.trialTranscriptions.set(key, {
+          trial_remains_num: result.trial_remains_num,
+          trial_remains_until_date: result.trial_remains_until_date
+        });
+      }
+
       this.apiUpdatesManager.processLocalUpdate({
         _: 'updateTranscribedAudio',
         msg_id: message.id,
@@ -1278,6 +1288,19 @@ export class AppMessagesManager extends AppManager {
     });
 
     return promise || ret;
+  }
+
+  // * Feed a locally (client-side) produced transcription into the regular
+  // * transcription pipeline so the UI renders it exactly like a server one.
+  public setTranscriptionResult(message: Message.message, text: string) {
+    this.apiUpdatesManager.processLocalUpdate({
+      _: 'updateTranscribedAudio',
+      msg_id: message.id,
+      peer: this.appPeersManager.getOutputPeer(message.peerId),
+      pFlags: {},
+      text,
+      transcription_id: 0
+    });
   }
 
   private getCommonThingsForSending() {
@@ -5646,26 +5669,9 @@ export class AppMessagesManager extends AppManager {
 
     const isSaved = isSavedDialog(dialog);
     const isTopic = isForumTopic(dialog);
-    const _isDialog = isDialog(dialog);
 
     filterId ??= this.dialogsStorage.getDialogFilterId(dialog);
     const pinned = dialog.pFlags?.pinned ? undefined : true;
-
-    if(pinned) {
-      let limitType: ApiLimitType;
-      if(isSaved) {
-        limitType = 'savedPin';
-      } else if(isTopic) {
-        limitType = 'topicPin';
-      } else {
-        limitType = filterId === FOLDER_ID_ARCHIVE ? 'folderPin' : 'pin';
-      }
-
-      const max = await this.apiManager.getLimit(limitType);
-      if(this.dialogsStorage.getPinnedOrders(filterId).length >= max) {
-        throw makeError(!_isDialog ? 'PINNED_TOO_MUCH' : 'PINNED_DIALOGS_TOO_MUCH');
-      }
-    }
 
     if(isTopic) {
       return this.updatePinnedForumTopic(peerId, topicOrSavedId, pinned);
@@ -6360,6 +6366,10 @@ export class AppMessagesManager extends AppManager {
       return Promise.resolve();
     }
 
+    // Ghost mode: skip every server-side read call (they are the read receipts).
+    // The local processing below still clears the badge in our own UI.
+    const ghostMode = this.appStateManager.isGhostMode();
+
     // console.trace('start read')
     this.log('readHistory:', peerId, maxId, threadId);
 
@@ -6412,7 +6422,7 @@ export class AppMessagesManager extends AppManager {
 
     let apiPromise: Promise<any>;
     if(monoforumThreadId) {
-      if(!skipServerCall) {
+      if(!skipServerCall && !ghostMode) {
         apiPromise = this.apiManager.invokeApi('messages.readSavedHistory', {
           parent_peer: this.appPeersManager.getInputPeerById(peerId),
           peer: this.appPeersManager.getInputPeerById(monoforumThreadId),
@@ -6427,7 +6437,7 @@ export class AppMessagesManager extends AppManager {
         saved_peer_id: this.appPeersManager.getOutputPeer(monoforumThreadId)
       });
     } else if(threadId) {
-      if(!skipServerCall) {
+      if(!skipServerCall && !ghostMode) {
         apiPromise = this.apiManager.invokeApi('messages.readDiscussion', {
           peer: this.appPeersManager.getInputPeerById(peerId),
           msg_id: getServerMessageId(threadId),
@@ -6455,7 +6465,7 @@ export class AppMessagesManager extends AppManager {
         });
       }
     } else if(this.appPeersManager.isChannel(peerId)) {
-      if(!skipServerCall) {
+      if(!skipServerCall && !ghostMode) {
         apiPromise = this.apiManager.invokeApi('channels.readHistory', {
           channel: this.appChatsManager.getChannelInput(peerId.toChatId()),
           max_id: getServerMessageId(maxId)
@@ -6470,7 +6480,7 @@ export class AppMessagesManager extends AppManager {
         pts: undefined
       });
     } else {
-      if(!skipServerCall) {
+      if(!skipServerCall && !ghostMode) {
         apiPromise = this.apiManager.invokeApi('messages.readHistory', {
           peer: this.appPeersManager.getInputPeerById(peerId),
           max_id: getServerMessageId(maxId)
@@ -6496,8 +6506,10 @@ export class AppMessagesManager extends AppManager {
     this.rootScope.dispatchEvent('notification_reset', this.appPeersManager.getPeerString(peerId));
 
     // Track the highest maxId we've locally applied so future overlapping calls
-    // can correctly decide whether the server call is still needed.
-    if(!(historyStorage.triedToReadMaxId >= maxId)) {
+    // can correctly decide whether the server call is still needed. Skip the
+    // tracking while in ghost mode: the server was never told about this read,
+    // so leaving ghost mode must still be able to send a real read receipt.
+    if(!ghostMode && !(historyStorage.triedToReadMaxId >= maxId)) {
       historyStorage.triedToReadMaxId = maxId;
     }
 
@@ -6745,6 +6757,10 @@ export class AppMessagesManager extends AppManager {
       return Promise.resolve();
     }
 
+    // Ghost mode: drop the server calls (they are the read receipts) but keep
+    // the local media_unread / mention / reaction clearing below.
+    const ghostMode = this.appStateManager.isGhostMode();
+
     // Inspect the messages BEFORE we strip the local-form mids: we need to
     // know whether any of them are mentions or carry unread reactions, so we
     // can issue the dedicated server-side "mark mentions/reactions as read"
@@ -6792,10 +6808,12 @@ export class AppMessagesManager extends AppManager {
         messages: msgIds
       };
 
-      promise = this.apiManager.invokeApi('channels.readMessageContents', {
-        channel: this.appChatsManager.getChannelInput(channelId),
-        id: msgIds
-      });
+      if(!ghostMode) {
+        promise = this.apiManager.invokeApi('channels.readMessageContents', {
+          channel: this.appChatsManager.getChannelInput(channelId),
+          id: msgIds
+        });
+      }
     } else {
       update = {
         _: 'updateReadMessagesContents',
@@ -6804,23 +6822,25 @@ export class AppMessagesManager extends AppManager {
         pts_count: undefined
       };
 
-      promise = this.apiManager.invokeApi('messages.readMessageContents', {
-        id: msgIds
-      }).then((affectedMessages) => {
-        (update as Update.updateReadMessagesContents).pts = affectedMessages.pts;
-        (update as Update.updateReadMessagesContents).pts_count = affectedMessages.pts_count;
-        this.apiUpdatesManager.processLocalUpdate(update);
-      });
+      if(!ghostMode) {
+        promise = this.apiManager.invokeApi('messages.readMessageContents', {
+          id: msgIds
+        }).then((affectedMessages) => {
+          (update as Update.updateReadMessagesContents).pts = affectedMessages.pts;
+          (update as Update.updateReadMessagesContents).pts_count = affectedMessages.pts_count;
+          this.apiUpdatesManager.processLocalUpdate(update);
+        });
+      }
     }
 
     this.apiUpdatesManager.processLocalUpdate(update);
 
     if(hasMention || hasUnreadReaction) {
       const followUps: Promise<any>[] = [promise];
-      if(hasMention && hadUnreadMentions) {
+      if(hasMention && hadUnreadMentions && !ghostMode) {
         followUps.push(this.readMentions(peerId, threadId).catch(noop));
       }
-      if(hasUnreadReaction && hadUnreadReactions) {
+      if(hasUnreadReaction && hadUnreadReactions && !ghostMode) {
         followUps.push(this.readMentions(peerId, threadId, true).catch(noop));
       }
       promise = Promise.all(followUps).then(() => {});
@@ -6830,7 +6850,7 @@ export class AppMessagesManager extends AppManager {
   }
 
   public async readMentions(peerId: PeerId, threadId?: number, isReaction?: boolean, isPollVote?: boolean): Promise<boolean> {
-    if(DO_NOT_READ_HISTORY) {
+    if(DO_NOT_READ_HISTORY || this.appStateManager.isGhostMode()) {
       return;
     }
 
@@ -8633,12 +8653,17 @@ export class AppMessagesManager extends AppManager {
     const key = `${peerId}_${mid}`;
     const waitingPromise = this.waitingTranscriptions.get(key);
     if(!update.pFlags.pending && waitingPromise) {
+      const trial = this.trialTranscriptions.get(key);
+      this.trialTranscriptions.delete(key);
       waitingPromise.resolve({
         _: 'messages.transcribedAudio',
         pFlags: {},
         text,
-        transcription_id: update.transcription_id
+        transcription_id: update.transcription_id,
+        ...trial
       });
+    } else if(!update.pFlags.pending) {
+      this.trialTranscriptions.delete(key);
     }
 
     this.rootScope.dispatchEvent('message_transcribed', {peerId, mid, text, pending: update.pFlags.pending});
@@ -10325,6 +10350,12 @@ export class AppMessagesManager extends AppManager {
     force?: boolean,
     threadId?: number
   ): Promise<boolean> {
+    // Ghost mode: never broadcast typing/recording/uploading — it is an
+    // "online right now" indicator.
+    if(this.appStateManager.isGhostMode()) {
+      return Promise.resolve(false);
+    }
+
     if(threadId && !this.appPeersManager.isForum(peerId) && !this.appPeersManager.isBotforum(peerId)) {
       threadId = undefined;
     }
@@ -10892,6 +10923,13 @@ export class AppMessagesManager extends AppManager {
     //   ]
     // });
 
+    // * don't show sponsored messages at all when noAds is enabled
+    if(this.appStateManager.isNoAds()) {
+      return Promise.resolve({
+        _: 'messages.sponsoredMessagesEmpty'
+      });
+    }
+
     // * don't show sponsored messages in own channels
     if(!peerId.isUser() && await this.canSendToPeer(peerId)) {
       return Promise.resolve({
@@ -10930,12 +10968,14 @@ export class AppMessagesManager extends AppManager {
   }
 
   public viewSponsoredMessage(randomId: SponsoredMessage['random_id']) {
+    if(this.appStateManager.isNoAds()) return;
     return this.apiManager.invokeApiSingle('messages.viewSponsoredMessage', {
       random_id: randomId
     });
   }
 
   public clickSponsoredMessage(randomId: SponsoredMessage['random_id']) {
+    if(this.appStateManager.isNoAds()) return;
     return this.apiManager.invokeApiSingle('messages.clickSponsoredMessage', {
       random_id: randomId
     });

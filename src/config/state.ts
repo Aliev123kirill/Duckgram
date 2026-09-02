@@ -38,7 +38,7 @@ export type AppThemeSettings = Modify<ThemeSettings, {
 }>;
 
 export type AppTheme = Modify<Theme, {
-  name: 'day' | 'night' | 'light' | 'tinted' | 'system',
+  name: 'night' | 'tinted' | 'verydark' | 'duck' | 'glass' | 'glassgray' | 'system',
   settings?: Array<AppThemeSettings>
 }>;
 
@@ -80,14 +80,6 @@ export type StateSettings = {
   background?: Background, // ! DEPRECATED
   themes: AppTheme[],
   theme: AppTheme['name'],
-  // Last explicitly-picked theme variant on each side. The burger-menu Dark-Mode toggle uses
-  // these so toggling away and back returns to the same variant (e.g. tinted ↔ classic ↔ tinted)
-  // instead of always flipping to the legacy night/classic pair. Updated in themeController on
-  // settings.theme changes; radios/UI / `switchTheme(name)` direct calls feed it.
-  lastThemeNames: {
-    dark: Extract<AppTheme['name'], 'night' | 'tinted'>,
-    light: Extract<AppTheme['name'], 'day' | 'light'>
-  },
   notifications: {
     sound: boolean,
     push: boolean,
@@ -165,6 +157,14 @@ export type StateSettings = {
   // clicking the button itself (when input is empty), matches the per-client
   // toggle in tdesktop / iOS / Android.
   recordingMediaType: 'voice' | 'video',
+  // Ghost mode: hide online status, last seen and read receipts. Server-side
+  // "mark as read" calls and online/offline presence updates are suppressed;
+  // reading stays local-only (unread badges may re-appear on the next sync).
+  ghostMode: boolean,
+  // No ads: never fetch or render sponsored messages (channels feed and bot
+  // chat top plate). Enabled by default; toggling it off restores official
+  // behavior. No MTProto request is sent while enabled.
+  noAds: boolean,
   // My QR-code popup: remembers the user's last picked chat-theme + brightness
   // so reopens land back where they left off. `nightMode` falls back to the
   // global theme's brightness when unset; `selectedThemeId` empty = the
@@ -172,6 +172,16 @@ export type StateSettings = {
   qrCode: {
     nightMode?: boolean,
     selectedThemeId: string
+  },
+  proxy: {
+    enabled: boolean,
+    currentServer: number, // index into servers, -1 = none selected
+    servers: {
+      host: string,
+      port: number,
+      name: string,
+      secret?: string // MTProto proxy secret (hex, ee/dd fake-TLS prefix allowed)
+    }[]
   },
 };
 
@@ -406,6 +416,65 @@ const makeDefaultAppTheme = (name: AppTheme['name']): AppTheme => {
   };
 };
 
+// macOS-Sequoia-style dark-green glass wallpaper: a pure 4-stop gradient (no pattern) so the
+// translucent `glass` surfaces pick up a smooth green backdrop to blur. Stored on the
+// baseThemeNight entry; the other base entries keep DEFAULT_THEME's wallpapers.
+const GLASS_WALLPAPER: ThemeSettings['wallpaper'] = {
+  _: 'wallPaper',
+  pFlags: {},
+  access_hash: '',
+  document: undefined,
+  id: '',
+  slug: '',
+  settings: {
+    _: 'wallPaperSettings',
+    pFlags: {},
+    background_color: 0x0f2b1c,
+    second_background_color: 0x1b4d31,
+    third_background_color: 0x0a1e13,
+    fourth_background_color: 0x2e6b45
+  }
+};
+
+const makeGlassAppTheme = (): AppTheme => {
+  const base = makeDefaultAppTheme('glass');
+  return {
+    ...base,
+    settings: base.settings.map((s) => s.base_theme._ === 'baseThemeNight' ?
+      {...s, wallpaper: GLASS_WALLPAPER} :
+      s)
+  };
+};
+
+// Cool-gray glass wallpaper: a 4-stop gradient so the translucent gray surfaces
+// pick up a smooth neutral backdrop to blur. Stored on the baseThemeNight entry.
+const GLASSGRAY_WALLPAPER: ThemeSettings['wallpaper'] = {
+  _: 'wallPaper',
+  pFlags: {},
+  access_hash: '',
+  document: undefined,
+  id: '',
+  slug: '',
+  settings: {
+    _: 'wallPaperSettings',
+    pFlags: {},
+    background_color: 0x1a1a2e,
+    second_background_color: 0x2d2d44,
+    third_background_color: 0x16162a,
+    fourth_background_color: 0x3a3a55
+  }
+};
+
+const makeGlassGrayAppTheme = (): AppTheme => {
+  const base = makeDefaultAppTheme('glassgray');
+  return {
+    ...base,
+    settings: base.settings.map((s) => s.base_theme._ === 'baseThemeNight' ?
+      {...s, wallpaper: GLASSGRAY_WALLPAPER} :
+      s)
+  };
+};
+
 export const SETTINGS_INIT: StateSettings = {
   messagesTextSize: 16,
   distanceUnit: 'kilometers',
@@ -453,16 +522,14 @@ export const SETTINGS_INIT: StateSettings = {
     big: true
   },
   themes: [
-    makeDefaultAppTheme('day'),
+    makeGlassAppTheme(),
+    makeGlassGrayAppTheme(),
     makeDefaultAppTheme('night'),
     makeDefaultAppTheme('tinted'),
-    makeDefaultAppTheme('light')
+    makeDefaultAppTheme('verydark'),
+    makeDefaultAppTheme('duck')
   ],
-  theme: 'system',
-  lastThemeNames: {
-    dark: 'night',
-    light: 'day'
-  },
+  theme: 'glass',
   notifications: {
     sound: false,
     push: true,
@@ -549,6 +616,13 @@ export const SETTINGS_INIT: StateSettings = {
   recordingMediaType: 'voice',
   qrCode: {
     selectedThemeId: ''
+  },
+  ghostMode: false,
+  noAds: true,
+  proxy: {
+    enabled: false,
+    currentServer: -1, // -1 means disabled
+    servers: []
   }
 };
 

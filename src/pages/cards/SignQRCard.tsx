@@ -83,9 +83,10 @@ export default function SignQRCard(_props: {spec: Spec}) {
     const url = 'tg://login?token=' + fixBase64String(encoded, true);
 
     const style = window.getComputedStyle(document.documentElement);
-    const surfaceColor = style.getPropertyValue('--light-filled-primary-color').trim();
-    const textColor = style.getPropertyValue('--primary-text-color').trim();
-    const primaryColor = style.getPropertyValue('--primary-color').trim();
+    let surfaceColor = style.getPropertyValue('--light-filled-primary-color').trim();
+    if(!surfaceColor) surfaceColor = style.getPropertyValue('--surface-color').trim() || '#ffffff';
+    const textColor = style.getPropertyValue('--primary-text-color').trim() || '#000000';
+    const primaryColor = style.getPropertyValue('--primary-color').trim() || '#3390ec';
 
     const {canvas} = await paintQrCode({
       data: url,

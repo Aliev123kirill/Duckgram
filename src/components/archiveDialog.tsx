@@ -16,7 +16,6 @@ import {Accessor, createComputed, createEffect, createMemo, createResource, crea
 import {createStore, unwrap} from 'solid-js/store';
 import styles from './archiveDialog.module.scss';
 import Badge from './badge';
-import {IconTsx} from './iconTsx';
 import ripple from './ripple';
 import {createStoriesStore, StoriesContextValue} from './stories/store';
 import {createStoriesViewerWithProvider} from './stories/viewer';
@@ -434,7 +433,7 @@ function ArchiveAvatar(props: {
     >
       {storiesCircle()}
       <div class={styles.MediaContent}>
-        <IconTsx class={styles.MediaIcon} icon="archive_filled" />
+        <img class={styles.MediaImage} src="assets/img/archive_duck.png" alt="" draggable={false} />
       </div>
     </div>
   );
