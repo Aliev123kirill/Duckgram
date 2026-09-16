@@ -102,7 +102,7 @@ pnpm run package    # портативный .exe (electron-builder, Windows x64
 
 - Исходный код: [github.com/Aliev123kirill/Duckgram](https://github.com/Aliev123kirill/Duckgram)
 - Релизы: [github.com/Aliev123kirill/Duckgram/releases](https://github.com/Aliev123kirill/Duckgram/releases)
-- Duckgram fix: 
+- Duckgram fix: [https://github.com/Aliev123kirill/Duckgram_fix.git](https://github.com/Aliev123kirill/Duckgram_fix.git)
 
 ## 📄 Лицензия
 
