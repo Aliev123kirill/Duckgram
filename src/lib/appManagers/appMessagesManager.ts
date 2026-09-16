@@ -17,6 +17,8 @@ import {nextRandomUint, randomLong} from '@helpers/random';
 import {Chat, ChatFull, Dialog as MTDialog, DialogPeer, DocumentAttribute, InputMedia, InputMessage, InputMessageReadMetric, InputPeerNotifySettings, InputSingleMedia, Message, MessageAction, MessageEntity, MessageFwdHeader, MessageMedia, MessageReplies, MessageReplyHeader, MessagesDialogs, MessagesFilter, MessagesMessages, MethodDeclMap,  PeerNotifySettings, PhotoSize, SendMessageAction, Update, Photo, Updates, ReplyMarkup, InputPeer, InputPhoto, InputDocument, WebPage, GeoPoint, InputChannel, InputDialogPeer, ReactionCount, MessagePeerReaction, MessagesSearchCounter, Peer, MessageReactions, Document, InputFile, Reaction, ForumTopic as MTForumTopic, MessagesForumTopics, MessagesGetReplies, MessagesGetHistory, MessagesAffectedHistory,  MessagesTranscribedAudio, ReadParticipantDate, WebDocument, MessagesSearch, MessagesSearchGlobal, InputReplyTo, MessagesSendMessage, MessagesSendMedia, MessagesGetSavedHistory, MessagesSavedDialogs, SavedDialog as MTSavedDialog, User, MissingInvitee, TextWithEntities, ChannelsSearchPosts, FactCheck, MessageExtendedMedia, SponsoredMessage, MessagesSponsoredMessages, InputGroupCall, TodoItem, TodoCompletion, SearchPostsFlood,  MessagesDeleteSavedHistory, ChannelsDeleteParticipantHistory, MessagesDeleteHistory, MessagesDeleteTopicHistory, RichMessage} from '@layer';
 import {ArgumentTypes, InvokeApiOptions, Modify} from '@types';
 import {logger, LogTypes} from '@lib/logger';
+import AppStorage from '@lib/storage';
+import {AccountDatabase, getDatabaseState} from '@config/databases/state';
 import {ReferenceContext} from '@lib/storages/references';
 import {AnyDialog, FilterType, GLOBAL_FOLDER_ID} from '@lib/storages/dialogs';
 import {ChatRights} from '@appManagers/appChatsManager';
@@ -24,7 +26,7 @@ import {MyDocument} from '@appManagers/appDocsManager';
 import {MyPhoto} from '@appManagers/appPhotosManager';
 import DEBUG from '@config/debug';
 import SlicedArray, {Slice, SliceEnd} from '@helpers/slicedArray';
-import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, GENERAL_TOPIC_ID, HIDDEN_PEER_ID, MESSAGES_ALBUM_MAX_SIZE, MUTE_UNTIL, NULL_PEER_ID, REAL_FOLDERS, REAL_FOLDER_ID, REPLIES_HIDDEN_CHANNEL_ID, REPLIES_PEER_ID, SERVICE_PEER_ID, TEST_NO_SAVED, THUMB_TYPE_FULL, TOPIC_COLORS} from '@appManagers/constants';
+import {FOLDER_ID_ALL, FOLDER_ID_ARCHIVE, GENERAL_TOPIC_ID, HIDDEN_PEER_ID, LOCAL_CHAT_PIN_LIMIT, MESSAGES_ALBUM_MAX_SIZE, MUTE_UNTIL, NULL_PEER_ID, REAL_FOLDERS, REAL_FOLDER_ID, REPLIES_HIDDEN_CHANNEL_ID, REPLIES_PEER_ID, SERVICE_PEER_ID, TEST_NO_SAVED, THUMB_TYPE_FULL, TOPIC_COLORS} from '@appManagers/constants';
 import {getMiddleware} from '@helpers/middleware';
 import assumeType from '@helpers/assumeType';
 import copy from '@helpers/object/copy';
@@ -201,6 +203,8 @@ export type PinnedStorage = Partial<{
   count: number,
   maxId: number
 }>;
+
+export const LOCAL_PINS_LIMIT = 20;
 export type MessagesStorage = Map<number, Message.message | Message.messageService> & {peerId: PeerId, type: MessagesStorageType, key: MessagesStorageKey};
 export type MessagesStorageType = 'scheduled' | 'history' | 'grouped' | 'logs';
 export type MessagesStorageKey = `${PeerId}_${MessagesStorageType}`;
@@ -521,6 +525,9 @@ export class AppMessagesManager extends AppManager {
     }
   } & {[key: HistoryStorageKey]: HistoryStorage};
   private pinnedMessages: {[key: string]: PinnedStorage};
+  private localPins: Record<string, number[]> = {};
+  private localPinsStorage: AppStorage<{pins: Record<string, number[]>}, AccountDatabase>;
+  private loadLocalPinsPromise: Promise<void>;
   private references: {[key: string]: MessageContext};
 
   private threadsServiceMessagesIdsStorage: {[peerId_threadId: string]: number};
@@ -834,6 +841,13 @@ export class AppMessagesManager extends AppManager {
       delay: 500,
       debounce: true,
       processBatch: this.processChecklistBatch
+    });
+
+    this.localPinsStorage = new AppStorage(getDatabaseState(this.getAccountNumber()), 'localPins');
+    this.localPinsStorage.get('pins').then((pins) => {
+      if(pins) {
+        this.localPins = pins;
+      }
     });
 
     return this.appStateManager.getState().then((state) => {
@@ -4865,45 +4879,146 @@ export class AppMessagesManager extends AppManager {
     return this.pinnedMessages[this.getPinnedMessagesKey(peerId, threadId)]?.maxId;
   }
 
+  public toggleLocalPin(peerId: PeerId, mid: number) {
+    const loadPromise = this.loadLocalPinsPromise ??= this.localPinsStorage.get('pins').then((pins) => {
+      if(pins) {
+        this.localPins = pins;
+      }
+    });
+
+    return loadPromise.then(() => {
+      const key = this.getPinnedMessagesKey(peerId);
+      const localPins = (this.localPins[key] ??= []);
+      const index = localPins.indexOf(mid);
+      let pinned: boolean;
+      if(index !== -1) {
+        localPins.splice(index, 1);
+        pinned = false;
+      } else {
+        localPins.unshift(mid);
+        pinned = true;
+        while(localPins.length > LOCAL_PINS_LIMIT) {
+          this.setMessagePinnedFlag(peerId, localPins.pop());
+        }
+      }
+
+      if(localPins.length) {
+        this.localPins[key] = localPins;
+      } else {
+        delete this.localPins[key];
+      }
+
+      this.localPinsStorage.set({pins: this.localPins});
+
+      this.setMessagePinnedFlag(peerId, mid, pinned);
+      this.resetPinnedMessagesCache(peerId, [mid], pinned);
+
+      return !!pinned;
+    });
+  }
+
   public updatePinnedMessage(peerId: PeerId, mid: number, unpin?: boolean, silent?: boolean, pm_oneside?: boolean) {
-    return this.apiManager.invokeApi('messages.updatePinnedMessage', {
-      peer: this.appPeersManager.getInputPeerById(peerId),
-      unpin,
-      silent,
-      pm_oneside,
-      id: getServerMessageId(mid)
-    }).then((updates) => {
-      // this.log('pinned updates:', updates);
-      this.apiUpdatesManager.processUpdateMessage(updates);
+    const loadPromise = this.loadLocalPinsPromise ??= this.localPinsStorage.get('pins').then((pins) => {
+      if(pins) {
+        this.localPins = pins;
+      }
+    });
+
+    return loadPromise.then(() => {
+      const key = this.getPinnedMessagesKey(peerId);
+      const localPins = this.localPins[key] ?? [];
+
+      if(!unpin && !localPins.includes(mid)) {
+        return this.toggleLocalPin(peerId, mid);
+      } else if(unpin && localPins.includes(mid)) {
+        return this.toggleLocalPin(peerId, mid);
+      }
+
+      return Promise.resolve(!!localPins.includes(mid));
     });
   }
 
   public unpinAllMessages(peerId: PeerId): Promise<boolean> {
-    return this.apiManager.invokeApiSingle('messages.unpinAllMessages', {
-      peer: this.appPeersManager.getInputPeerById(peerId)
-    }).then((affectedHistory) => {
-      this.apiUpdatesManager.processLocalUpdate({
-        _: 'updatePts',
-        pts: affectedHistory.pts,
-        pts_count: affectedHistory.pts_count
-      });
+    const loadPromise = this.loadLocalPinsPromise ??= this.localPinsStorage.get('pins').then((pins) => {
+      if(pins) {
+        this.localPins = pins;
+      }
+    });
 
-      if(!affectedHistory.offset) {
-        const storage = this.getHistoryMessagesStorage(peerId);
-        storage.forEach((message) => {
-          if((message as Message.message).pFlags.pinned) {
-            delete (message as Message.message).pFlags.pinned;
-          }
-        });
-
-        this.rootScope.dispatchEvent('peer_pinned_messages', {peerId, unpinAll: true});
-        delete this.pinnedMessages[this.getPinnedMessagesKey(peerId)];
-
-        return true;
+    return loadPromise.then(() => {
+      const key = this.getPinnedMessagesKey(peerId);
+      const mids = this.localPins[key];
+      if(!mids?.length) {
+        return false;
       }
 
-      return this.unpinAllMessages(peerId);
+      delete this.localPins[key];
+      this.localPinsStorage.set({pins: this.localPins});
+
+      for(const mid of mids) {
+        this.setMessagePinnedFlag(peerId, mid, false);
+      }
+
+      this.resetPinnedMessagesCache(peerId, mids, false);
+      return true;
     });
+  }
+
+  private setMessagePinnedFlag(peerId: PeerId, mid: number, pinned = true) {
+    if(mid === undefined) {
+      return;
+    }
+
+    const storage = this.getHistoryMessagesStorage(peerId);
+    const message = storage.get(mid) as Message.message;
+    if(!message) {
+      return;
+    }
+
+    this.modifyMessage(message, (message) => {
+      if(pinned) {
+        message.pFlags.pinned = true;
+      } else {
+        delete message.pFlags.pinned;
+      }
+    }, storage);
+  }
+
+  public getLocalPinnedMessages(peerId: PeerId) {
+    return this.localPins[this.getPinnedMessagesKey(peerId)] ?? [];
+  }
+
+  public isMessageLocallyPinned(peerId: PeerId, mid: number) {
+    return (this.localPins[this.getPinnedMessagesKey(peerId)] ?? []).includes(mid);
+  }
+
+  private mergeLocalPinnedHistory(peerId: PeerId, mids: number[], count: number) {
+    if(mids.length && typeof mids[0] !== 'number') {
+      return {mids, count};
+    }
+
+    const localPins = this.localPins[this.getPinnedMessagesKey(peerId)];
+    if(!localPins?.length) {
+      return {mids, count};
+    }
+
+    const existing = new Set(mids);
+    let added = 0;
+    for(let i = 0, length = localPins.length; i < length; ++i) {
+      const mid = localPins[i];
+      if(mid !== undefined && !existing.has(mid)) {
+        existing.add(mid);
+        mids.push(mid);
+        added++;
+      }
+    }
+
+    if(added) {
+      mids.sort((a, b) => b - a);
+      count = (count || 0) + added;
+    }
+
+    return {mids, count};
   }
 
   public getGroupedText(grouped_id: string) {
@@ -5690,7 +5805,15 @@ export class AppMessagesManager extends AppManager {
       });
     }
 
-    return promise.then(() => {
+    const isMainList = !isSaved && filterId === FOLDER_ID_ALL;
+
+    // Locally-pinned chats have no server-side pin — unpin them without a server call
+    if(isMainList && !pinned && this.dialogsStorage.isDialogPinnedLocal(peerId)) {
+      this.dialogsStorage.setDialogPinnedLocal(peerId, false);
+      return Promise.resolve();
+    }
+
+    const result = promise.then(() => {
       const pFlags: (Update.updateDialogPinned | Update.updateSavedDialogPinned)['pFlags'] = pinned ? {pinned} : {};
       const dialogPeer = this.appPeersManager.getDialogPeer(isSaved ? topicOrSavedId : peerId);
       this.apiUpdatesManager.saveUpdate(isSaved ? {
@@ -5704,6 +5827,25 @@ export class AppMessagesManager extends AppManager {
         pFlags
       });
     });
+
+    // Telegram allows only LOCAL_CHAT_PIN_LIMIT server-pinned chats; when the
+    // server rejects an extra pin, pin the chat locally instead
+    if(isMainList && pinned) {
+      return result.catch((err: ApiError) => {
+        if(err.type !== 'PINNED_DIALOGS_TOO_MUCH' && err.type !== 'PINNED_TOO_MUCH') {
+          throw err;
+        }
+
+        if(this.dialogsStorage.getPinnedOrders(FOLDER_ID_ALL).length >= LOCAL_CHAT_PIN_LIMIT) {
+          throw err;
+        }
+
+        err.handled = true;
+        this.dialogsStorage.setDialogPinnedLocal(peerId, true);
+      });
+    }
+
+    return result;
   }
 
   public async markDialogUnread({peerId, read, monoforumThreadId}: MarkDialogUnreadArgs) {
@@ -9400,6 +9542,7 @@ export class AppMessagesManager extends AppManager {
     };
 
     const isThreadTemporary = options.threadId && isTempId(options.threadId);
+    const isPinnedFilter = options.inputFilter?._ === 'inputMessagesFilterPinned';
 
     const willFill = options.fetchIfWasNotFetched && !historyStorage.wasFetched && !isThreadTemporary;
 
@@ -9410,9 +9553,13 @@ export class AppMessagesManager extends AppManager {
       (haveSlice.slice.length === limit || (haveSlice.fulfilled & SliceEnd.Both) === SliceEnd.Both) &&
       (!needRealOffsetIdOffset || haveSlice.slice.isEnd(SliceEnd.Bottom))
     ) {
+      const history = isPinnedFilter ?
+        this.mergeLocalPinnedHistory(options.peerId, Array.from(haveSlice.slice), historyStorage.count) :
+        undefined;
+
       return {
-        count: historyStorage.count,
-        history: Array.from(haveSlice.slice),
+        count: history ? history.count : historyStorage.count,
+        history: history ? history.mids : Array.from(haveSlice.slice),
         isEnd: haveSlice.slice.getEnds(),
         offsetIdOffset: haveSlice.offsetIdOffset,
         messages: options.isCacheableSearch ? haveSlice.slice.map((str) => this.getMessageByPeer(+str.split('_')[0], +str.split('_')[1])) : undefined
@@ -9470,9 +9617,13 @@ export class AppMessagesManager extends AppManager {
         offsetIdOffset = slice?.offsetIdOffset || historyStorage.count;
       }
 
+      const history = isPinnedFilter ?
+        this.mergeLocalPinnedHistory(options.peerId, Array.from(f), historyStorage.count) :
+        undefined;
+
       return {
-        count: historyStorage.count,
-        history: Array.from(f),
+        count: history ? history.count : historyStorage.count,
+        history: history ? history.mids : Array.from(f),
         isEnd,
         offsetIdOffset,
         messages: options.isCacheableSearch ? f.map((v) => this.getMessageByPeer(v.split('_')[0].toPeerId(), +v.split('_')[1])) : undefined

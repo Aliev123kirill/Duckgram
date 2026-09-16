@@ -13,7 +13,7 @@ import {
 } from '@components/solidJsTabs';
 import {AppAboutTab} from '@components/solidJsTabs/tabs';
 import lottieLoader from '@lib/lottie/lottieLoader';
-import {AppDataAndStorageTab, AppProxyTab} from '@components/solidJsTabs/tabs';
+import {AppDataAndStorageTab} from '@components/solidJsTabs/tabs';
 import ButtonIcon from '@components/buttonIcon';
 import rootScope from '@lib/rootScope';
 import Row from '@components/rowTsx';
@@ -126,7 +126,6 @@ const Settings = () => {
   const subTabConfigs: SubTabConfig[] = [
     makeSubTabConfig('unmute', 'AccountSettings.Notifications', AppNotificationsTab, tab),
     makeSubTabConfig('data', 'DataSettings', AppDataAndStorageTab, tab),
-    makeSubTabConfig('link', 'Proxy', AppProxyTab, tab),
     makeSubTabConfig('lock', 'AccountSettings.PrivacyAndSecurity', AppPrivacyAndSecurityTab, tab),
     makeSubTabConfig('settings', 'Telegram.GeneralSettingsViewController', AppGeneralSettingsTab, tab),
     makeSubTabConfig('folder', 'AccountSettings.Filters', AppChatFoldersTab, tab),

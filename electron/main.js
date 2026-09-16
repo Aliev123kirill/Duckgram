@@ -5,6 +5,15 @@ const path = require('path');
 const {spawn} = require('child_process');
 
 const APP_ROOT = path.join(__dirname, '..');
+// * [DUCKGRAM DEBUG] append-only diagnostic log (writing to stdout is lost
+// * when the app is started normally)
+const DEBUG_LOG = path.join(app.getPath('userData'), 'debug.log');
+function dbg(...args) {
+  try {
+    fs.appendFileSync(DEBUG_LOG, '[' + new Date().toISOString() + '] ' + args.join(' ') + '\n');
+  } catch(e) {}
+}
+process.on('exit', () => dbg('MAIN process exit'));
 const DIST_DIR = path.join(APP_ROOT, 'dist');
 // * static assets referenced at runtime (fonts, favicons, changelogs) live here,
 // * vite builds with copyPublicDir:false so dist/ alone doesn't have them
@@ -248,8 +257,9 @@ function createTray() {
     return;
   }
 
-  // * Windows tray wants small icons: downscale the 192px source
-  const icon = nativeImage.createFromPath(iconPath).resize({width: 32, height: 32});
+  // * keep the full-resolution source so Windows renders a standard, sharp tray
+  // * icon instead of the tiny, blurry 32x32 downscale
+  const icon = nativeImage.createFromPath(iconPath);
   if(icon.isEmpty()) {
     return;
   }
@@ -365,6 +375,21 @@ function createWindow(baseURL) {
     }, 3000);
   });
 
+  // * [DUCKGRAM DEBUG] surface renderer console + failed resource loads
+  mainWindow.webContents.on('console-message', function(event, a, b, c, d) {
+    const isNew = (typeof a === 'object' && a !== null && ('level' in a));
+    const level = isNew ? a.level : a;
+    const message = isNew ? a.message : b;
+    const line = isNew ? a.lineNumber : c;
+    const sourceId = isNew ? a.sourceId : d;
+    const stack = isNew && a.stackTrace ? ' STACK:' + a.stackTrace.map((f) => f.url + ':' + f.lineNumber).join(' <- ') : '';
+    dbg('[renderer:' + level + '] ' + message + ' (' + sourceId + ':' + line + ')' + stack);
+  });
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    if(errorCode === -3) return;
+    dbg('[fail-load:' + errorCode + '] ' + validatedURL + ' ' + errorDescription);
+  });
+
   mainWindow.webContents.setBackgroundThrottling(false);
   mainWindow.loadURL(baseURL + '/index.html' + (USE_TEST_DCS ? '?test=1' : ''));
   mainWindow.on('close', (event) => {
@@ -399,6 +424,7 @@ function startServer(onReady) {
     });
     server.listen(port, '127.0.0.1', () => {
       server.removeAllListeners('error');
+      dbg('MAIN http server on port ' + port);
       onReady(server.address().port);
     });
   };
@@ -463,6 +489,7 @@ if(!gotLock) {
     app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
     createSplashWindow();
+    dbg('MAIN splash created, startServer following');
 
     // On the very first launch the hosts fix runs first (`.duck` marker skips
     // it on later starts). Keep the splash up until it finishes.
@@ -476,6 +503,25 @@ if(!gotLock) {
 
     session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
       callback(['media', 'notifications', 'fullscreen', 'clipboard-read', 'clipboard-sanitized-write'].includes(permission));
+    });
+
+    // * [DUCKGRAM DEBUG] log failed resource loads (404s etc.)
+    session.defaultSession.webRequest.onResponseStarted((details) => {
+      if(details.statusCode >= 400) {
+        dbg('[http:' + details.statusCode + '] ' + details.url);
+      }
+    });
+
+    dbg('MAIN whenReady begin');
+
+    app.on('before-quit', () => {
+      dbg('MAIN before-quit');
+    });
+    app.on('will-quit', () => {
+      dbg('MAIN will-quit');
+    });
+    app.on('second-instance', () => {
+      dbg('MAIN second-instance');
     });
 
     ipcMain.handle('open-external', (event, url) => {
@@ -544,6 +590,7 @@ if(!gotLock) {
   });
 
   app.on('window-all-closed', () => {
+    dbg('MAIN window-all-closed (recreatingWindow=' + recreatingWindow + ')');
     if(recreatingWindow) {
       return;
     }

@@ -1,8 +1,6 @@
 import PopupElement, {addCancelButton} from '.';
-import PopupPeer, {PopupPeerButtonCallbackCheckboxes, PopupPeerOptions} from '@components/popups/peer';
-import rootScope from '@lib/rootScope';
+import PopupPeer, {PopupPeerButtonCallback, PopupPeerOptions} from '@components/popups/peer';
 import {FormatterArguments, LangPackKey} from '@lib/langPack';
-import wrapPeerTitle from '@components/wrappers/peerTitle';
 
 export default class PopupPinMessage {
   constructor(private peerId: PeerId, private mid: number, private unpin?: true, private onConfirm?: () => void) {
@@ -12,23 +10,17 @@ export default class PopupPinMessage {
   private async construct() {
     const {peerId, mid, unpin, onConfirm} = this;
     let title: LangPackKey, description: LangPackKey, descriptionArgs: FormatterArguments;
-    const buttons: PopupPeerOptions['buttons'] = [], checkboxes: PopupPeerOptions['checkboxes'] = [];
+    const buttons: PopupPeerOptions['buttons'] = [];
 
     const managers = PopupElement.MANAGERS;
 
-    const canUnpin = await managers.appPeersManager.canPinMessage(peerId);
-
-    const callback = (e: MouseEvent, checked: PopupPeerButtonCallbackCheckboxes, oneSide?: boolean, silent?: boolean) => {
+    const callback: PopupPeerButtonCallback = () => {
       setTimeout(() => { // * костыль, потому что document.elementFromPoint вернёт popup-peer пока он будет закрываться
         let promise: Promise<any>;
         if(unpin && !mid) {
-          if(canUnpin) {
-            promise = managers.appMessagesManager.unpinAllMessages(peerId);
-          } else {
-            promise = managers.appMessagesManager.hidePinnedMessages(peerId);
-          }
+          promise = managers.appMessagesManager.unpinAllMessages(peerId);
         } else {
-          promise = managers.appMessagesManager.updatePinnedMessage(peerId, mid, unpin, silent, oneSide);
+          promise = managers.appMessagesManager.updatePinnedMessage(peerId, mid, unpin);
         }
 
         if(onConfirm) {
@@ -38,17 +30,11 @@ export default class PopupPinMessage {
     };
 
     if(unpin) {
-      let buttonText: LangPackKey = 'UnpinMessage';
+      const buttonText: LangPackKey = 'UnpinMessage';
       if(!mid) {
-        if(canUnpin) {
-          title = 'Popup.Unpin.AllTitle';
-          description = 'Chat.UnpinAllMessagesConfirmation';
-          descriptionArgs = ['' + ((await managers.appMessagesManager.getPinnedMessagesCount(peerId)) || 1)];
-        } else {
-          title = 'Popup.Unpin.HideTitle';
-          description = 'Popup.Unpin.HideDescription';
-          buttonText = 'Popup.Unpin.Hide';
-        }
+        title = 'Popup.Unpin.AllTitle';
+        description = 'Chat.UnpinAllMessagesConfirmation';
+        descriptionArgs = ['' + ((await managers.appMessagesManager.getPinnedMessagesCount(peerId)) || 1)];
       } else {
         title = 'UnpinMessageAlertTitle';
         description = 'Chat.Confirm.Unpin';
@@ -61,45 +47,12 @@ export default class PopupPinMessage {
       });
     } else {
       title = 'PinMessageAlertTitle';
-      const pinButtonText: LangPackKey = 'PinMessage';
+      description = 'PinMessageAlert';
 
-      if(peerId.isAnyChat()) {
-        buttons.push({
-          langKey: pinButtonText,
-          callback: (e, checked) => callback(e, checked, false, !checked.size)
-        });
-
-        if(await managers.appChatsManager.isBroadcast(peerId.toChatId())) {
-          description = 'PinMessageAlertChannel';
-        } else {
-          description = 'PinMessageAlert';
-
-          checkboxes.push({
-            text: 'PinNotify',
-            checked: true
-          });
-        }
-      } else {
-        description = 'PinMessageAlertChat';
-
-        if(peerId === rootScope.myId) {
-          buttons.push({
-            langKey: pinButtonText,
-            callback
-          });
-        } else {
-          buttons.push({
-            langKey: pinButtonText,
-            callback: (e, checked) => callback(e, checked, !checked.size)
-          });
-
-          checkboxes.push({
-            text: 'PinAlsoFor',
-            textArgs: [await wrapPeerTitle({peerId})],
-            checked: true
-          });
-        }
-      }
+      buttons.push({
+        langKey: 'PinMessage',
+        callback
+      });
     }
 
     addCancelButton(buttons);
@@ -109,8 +62,7 @@ export default class PopupPinMessage {
       titleLangKey: title,
       descriptionLangKey: description,
       descriptionLangArgs: descriptionArgs,
-      buttons,
-      checkboxes
+      buttons
     });
 
     popup.show();

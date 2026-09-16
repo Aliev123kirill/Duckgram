@@ -27,12 +27,17 @@ function copyDirFiles(src, dst) {
     const dstPath = join(dst, name);
     if(statSync(srcPath).isFile()) {
       copyFileSync(srcPath, dstPath);
+    } else if(statSync(srcPath).isDirectory()) {
+      copyDirFiles(srcPath, dstPath);
     }
   }
 }
 
 // Audio assets for notifications
 copyDirFiles(join('public', 'assets', 'audio'), join('dist', 'assets', 'audio'));
+
+// Lottie reaction effects (ReactionGeneric.json, StarReaction*.json, etc.)
+copyDirFiles(join('public', 'assets', 'tgs'), join('dist', 'assets', 'tgs'));
 
 // Duck image for saved messages avatar
 copyDirFiles(join('public', 'assets', 'img'), join('dist', 'assets', 'img'));

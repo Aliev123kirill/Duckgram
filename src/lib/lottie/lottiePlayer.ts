@@ -894,7 +894,16 @@ export default class LottiePlayer extends EventListenerBase<LottiePlayerEvents> 
 
       this.dispatchEvent('enterFrame', frameNo);
     } catch(err) {
-      console.error('LottiePlayer renderFrame error:', err/* , frame */, this, cachedSource);
+      console.error('LottiePlayer renderFrame error:', err, this, cachedSource, {
+        msg: err && (err as any).message,
+        srcType: cachedSource && (cachedSource as any).constructor?.name,
+        srcClosed: !!(cachedSource && (cachedSource as any).close),
+        reqId: (this as any).reqId,
+        name: (this as any).name,
+        offscreen: (this as any).offscreen,
+        offscreenViaCompositor: (this as any).offscreenViaCompositor,
+        cacheName: (this as any).cacheName
+      });
       this.autoplay = false;
       this.pause();
       this.fail(err);

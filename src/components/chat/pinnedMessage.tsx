@@ -181,7 +181,7 @@ export default function createChatPinnedMessage(
       onClick: () => {
         PopupElement.createPopup(PopupPinMessage, chat.peerId, pinnedMid, true);
       },
-      verify: () => managers.appPeersManager.canPinMessage(chat.peerId)
+      verify: () => true
     }, {
       icon: 'eyecross_outline',
       text: 'Popup.Unpin.HideTitle',
@@ -198,11 +198,10 @@ export default function createChatPinnedMessage(
   const btnUnpin = ButtonIcon('close pinned-message-unpin');
   attachClickEvent(btnUnpin, async(e) => {
     cancelEvent(e);
-    const canPin = await managers.appPeersManager.canPinMessage(chat.peerId);
     PopupElement.createPopup(
       PopupPinMessage,
       chat.peerId,
-      canPin ? pinnedMid : 0,
+      pinnedMid,
       true
     );
   }, {listenerSetter});

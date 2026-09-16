@@ -3,12 +3,12 @@ import Row from '@components/rowTsx';
 import {IS_ELECTRON} from '@environment/userAgent';
 import {i18n} from '@lib/langPack';
 
-const GITHUB_URL = 'https://github.com/duckgram/duckgram';
+const GITHUB_URL = 'https://github.com/Aliev123kirill/Duckgram';
 const APP_NAME = 'Duckgram';
 const APP_TECHNOLOGY = IS_ELECTRON
   ? 'TypeScript, Solid.js, MTProto, Vite, Electron, SCSS'
   : 'TypeScript, Solid.js, MTProto, Vite, SCSS';
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.2.9';
 
 // Section name/caption are rendered as literal JSX (not via i18n), and row
 // texts use i18n() keys defined in langCustom.ts so they follow the selected

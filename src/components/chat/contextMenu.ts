@@ -1138,7 +1138,6 @@ export default class ChatContextMenu {
         !this.message.pFlags.is_outgoing &&
         this.message._ !== 'messageService' &&
         !this.message.pFlags.pinned &&
-        await this.managers.appPeersManager.canPinMessage(this.message.peerId) &&
         this.chat.type !== ChatType.Scheduled &&
         !useIsFrozen()
     }, {
@@ -1146,7 +1145,6 @@ export default class ChatContextMenu {
       text: 'Message.Context.Unpin',
       onClick: this.onUnpinClick,
       verify: async() => (this.message as Message.message).pFlags.pinned &&
-        await this.managers.appPeersManager.canPinMessage(this.message.peerId) &&
         !useIsFrozen()
     }, {
       icon: 'download',

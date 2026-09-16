@@ -1,6 +1,6 @@
 {
   "name": "tweb",
-  "version": "1.0.1",
+  "version": "1.2.9",
   "description": "",
   "main": "electron/main.js",
   "scripts": {
@@ -20,7 +20,7 @@
     "watch-lang": "node watch-lang.js",
     "lint": "oxlint src",
     "lint:fix": "oxlint src --fix",
-    "package": "electron-builder --win portable nsis",
+    "package": "electron-builder --win portable",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch",
     "build:solid": "node ./src/scripts/build_solid.js",
@@ -120,27 +120,12 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
         }
       ],
       "icon": "public/assets/img/icon_square_512.png"
     },
     "portable": {
-      "artifactName": "Duckgram-${version}-portable.exe"
-    },
-    "nsis": {
-      "artifactName": "Duckgram-${version}-setup.exe",
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Duckgram"
+      "artifactName": "Duckgram-1.0.8-portable.exe"
     }
   },
   "dependencies": {

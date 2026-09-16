@@ -79,6 +79,7 @@ export default class DialogsStorage extends AppManager {
   private allDialogsLoaded: {[folder_id: number]: boolean};
   private dialogsOffsetDate: {[folder_id: number]: number};
   private pinnedOrders: {[folder_id: number]: PeerId[]};
+  private localPinnedDialogs: PeerId[] = [];
   private dialogsNum: number;
 
   private dialogsIndex: SearchIndex<PeerId>;
@@ -219,8 +220,11 @@ export default class DialogsStorage extends AppManager {
         _order.splice(0, _order.length, ...order);
       }
 
+      this.localPinnedDialogs = state.localPinnedDialogs || [];
+
       if(dialogs.length) {
         AppStorage.freezeSaving<AccountDatabase>(this.setDialogsFromState.bind(this, dialogs), ['chats', 'dialogs', 'messages', 'users']);
+        this.ensureLocalPinnedDialogs();
       }
 
       this.allDialogsLoaded = state.allDialogsLoaded || {};
@@ -360,6 +364,78 @@ export default class DialogsStorage extends AppManager {
 
   public savePinnedOrders() {
     this.appStateManager.pushToState('pinnedOrders', this.pinnedOrders);
+  }
+
+  public isDialogPinnedLocal(peerId: PeerId) {
+    return this.localPinnedDialogs.indexOf(peerId) !== -1;
+  }
+
+  private saveLocalPinnedDialogs() {
+    this.appStateManager.pushToState('localPinnedDialogs', this.localPinnedDialogs);
+  }
+
+  /**
+   * Pin/unpin a chat locally — used when the server rejects a pin because the
+   * 5-chat limit is reached. Local pins are merged into the main-list order.
+   */
+  public setDialogPinnedLocal(peerId: PeerId, pinned: boolean) {
+    const idx = this.localPinnedDialogs.indexOf(peerId);
+    const isLocallyPinned = idx !== -1;
+
+    if(pinned && !isLocallyPinned) {
+      this.localPinnedDialogs.push(peerId);
+      this.saveLocalPinnedDialogs();
+    } else if(!pinned && isLocallyPinned) {
+      this.localPinnedDialogs.splice(idx, 1);
+      this.saveLocalPinnedDialogs();
+    }
+
+    const dialog = this.getDialogOnly(peerId);
+    if(!dialog || !!dialog.pFlags.pinned === pinned) {
+      return;
+    }
+
+    if(pinned) {
+      dialog.pFlags.pinned = true;
+    } else {
+      this.handleDialogUnpinning(dialog, FOLDER_ID_ALL);
+    }
+
+    this.processDialogForFilters(dialog);
+    this.reprocessPinnedFilter();
+    this.appMessagesManager.scheduleHandleNewDialogs(peerId, dialog);
+  }
+
+  /**
+   * Re-apply locally pinned chats into the main-list order after server-driven
+   * pin-order resets (updatePinnedDialogs) and on state hydration.
+   */
+  private ensureLocalPinnedDialogs() {
+    if(!this.localPinnedDialogs.length) {
+      return;
+    }
+
+    const order = this.getPinnedOrders(FOLDER_ID_ALL);
+    let orderChanged = false;
+
+    for(const peerId of this.localPinnedDialogs) {
+      if(order.indexOf(peerId) === -1) {
+        order.unshift(peerId);
+        orderChanged = true;
+      }
+
+      const dialog = this.getDialogOnly(peerId);
+      if(dialog) {
+        if(!dialog.pFlags.pinned) {
+          dialog.pFlags.pinned = true;
+        }
+        this.processDialogForFilters(dialog);
+      }
+    }
+
+    if(orderChanged) {
+      this.savePinnedOrders();
+    }
   }
 
   public resetPinnedOrder(folderId: number) {
@@ -2233,6 +2309,10 @@ export default class DialogsStorage extends AppManager {
         this.generateIndexForDialog(dialog);
         this.appMessagesManager.scheduleHandleNewDialogs(dialog.peerId, dialog);
       }
+    }
+
+    if(folderId === FOLDER_ID_ALL) {
+      this.ensureLocalPinnedDialogs();
     }
 
     this.reprocessPinnedFilter();

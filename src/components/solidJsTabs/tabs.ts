@@ -367,12 +367,6 @@ export const AppDataAndStorageTab =
     getComponentModule: () => import('../sidebarLeft/tabs/dataAndStorage')
   });
 
-export const AppProxyTab =
-  scaffoldSolidJSTab({
-    title: 'Proxy',
-    getComponentModule: () => import('../sidebarLeft/tabs/proxy')
-  });
-
 
 export const AppAboutTab =
   scaffoldSolidJSTab({

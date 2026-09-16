@@ -196,6 +196,7 @@ type CacheSomething<T> = {
 export type State = {
   allDialogsLoaded: DialogsStorage['allDialogsLoaded'],
   pinnedOrders: DialogsStorage['pinnedOrders'],
+  localPinnedDialogs: DialogsStorage['localPinnedDialogs'],
   botCommands: {[peerId: PeerId]: {[botId: string]: BotCommand[]}},
   // contactsList: UserId[],
   contactsListCachedTime: number,
@@ -529,7 +530,7 @@ export const SETTINGS_INIT: StateSettings = {
     makeDefaultAppTheme('verydark'),
     makeDefaultAppTheme('duck')
   ],
-  theme: 'glass',
+  theme: 'glassgray',
   notifications: {
     sound: false,
     push: true,
@@ -629,6 +630,7 @@ export const SETTINGS_INIT: StateSettings = {
 export const STATE_INIT: State = {
   allDialogsLoaded: {},
   pinnedOrders: {},
+  localPinnedDialogs: [],
   botCommands: {},
   // contactsList: [],
   contactsListCachedTime: 0,
