@@ -1,76 +1,108 @@
-## Telegram Web K
-Based on Webogram, patched and improved. Available for everyone here: https://web.telegram.org/k/
+# 🦆 Duckgram
 
+**Duckgram** — полнофункциональный Telegram-клиент на базе проекта **tweb (Telegram Web K)**, собранный как настольное приложение для Windows. Работает напрямую через протокол **MTProto** — без сторонних API-обёрток. Включает **собственную технологию обхода блокировок**, работающую локально, без своего сервера и VPN.
 
-### Developing
-Install dependencies with:
-```lang=bash
-pnpm install
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)]()
+[![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)]()
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)]()
+
+---
+
+## ✨ Возможности
+
+- 🛡 **Собственная технология обхода блокировок** — автоматически подбирает рабочий IP дата-центра Telegram и прописывает его локально (см. [ниже](#-уникальная-технология-обхода-блокировок)).
+- 🐤 **Тема «Утка»** и другие: «Стекло», «Серое стекло», «Очень тёмная».
+- 👻 **Режим невидимки (Ghost Mode)** — скрывает онлайн-статус, время последнего посещения и метки о прочтении. Читайте сообщения бесследно.
+- 🔠 **721 обновлённая иконка** и перегенерированный шрифт `tgico`.
+- 🔊 **Новый звук уведомлений** (заменяемый на свой через `duckgram.bat`).
+- 🌐 **Встроенные прокси**: MTProto, SOCKS5 и HTTP (в браузере трафик маршрутизирует только MTProto-прокси).
+- 📦 **Портативные сборки** Windows x64 и x86 — не требует установки.
+- 🖥 **Настольное приложение Electron**: значок в трее, глобальная горячая клавиша, бейдж непрочитанных сообщений, сплэш-экран.
+- 🇷🇺 **Русская локализация** интерфейса и настроек.
+
+---
+
+## 🚀 Установка и запуск
+
+1. Скачайте портативную сборку **`Duckgram-portable.exe`** (x64 или x86) со страницы [releases](https://github.com/Aliev123kirill/Duckgram/releases).
+2. Запустите `.exe` — установка не требуется.
+
+При **первом** запуске Duckgram автоматически:
+
+- запускает утилиту `Duckgram -fix` для подбора рабочего IP Telegram (потребуется подтвердить окно UAC);
+- после применения отмечает это маркером `.duck` и при следующих запусках запускает проверку только при необходимости.
+
+Для **полной сборки из исходников** (включая замену звука, иконки и темы) используйте `duckgram.bat` — он выполнит все шаги автоматически (кэш, зависимости, сборка, упаковка, запуск).
+
+---
+
+## 🛡 Уникальная технология обхода блокировок
+
+Duckgram не использует свой сервер, прокси или VPN. Всё выполняется **локально на вашем ПК**: подбирается «живой» IP дата-центра Telegram и прописывается в файл `hosts` Windows.
+
+### Как это работает
+
+| Шаг | Что происходит |
+|-----|----------------|
+| **Сканирование** | Берутся адреса из официального [cidr.txt](https://core.telegram.org/resources/cidr.txt) (при блокировке — зеркало GitHub/jsDelivr или локальный `lists/telegram-cidr-official.txt`). |
+| **Проверка** | Кандидаты проверяются по **TCP 443** и **TLS (SNI)** для `web.telegram.org` и `kws2.web.telegram.org`; в конфиг `telegram-web-ip.cfg` попадает только IP с успешным сертификатом. |
+| **Применение** | В `hosts` добавляется блок строк `IP + домены` с маркером `# telegram-web-fix`, делается бэкап в `backup/`, сбрасывается DNS-кэш (`ipconfig /flushdns`). |
+| **Отключение** | Удаляется **только** блок с маркером, остальной `hosts` не затрагивается. |
+
+### Безопасность
+
+- Меняется **только локальный файл** `C:\Windows\System32\drivers\etc\hosts` на вашем ПК.
+- **Не** поднимается прокси/VPN, **не** подменяются сертификаты браузера.
+- **Не** отправляется трафик автору проекта и **не** расшифровывается переписка.
+
+Дополнительно в клиент встроена поддержка **MTProto-прокси** — второго уровня обхода блокировок, который можно настроить вручную.
+
+---
+
+## 🧰 Технологии
+
+| Слой | Технология |
+|------|------------|
+| Рендеринг UI | **Solid.js** |
+| Язык | **TypeScript** |
+| Протокол | **MTProto** (собственная реализация) |
+| Сборка | **Vite** |
+| Десктоп-обёртка | **Electron** |
+| Стили | **SCSS** |
+
+Проект основан на **tweb (Telegram Web K)**, который, в свою очередь, построен на базе Webogram.
+
+---
+
+## 🔨 Сборка из исходников
+
+```bash
+pnpm install        # установка зависимостей
+pnpm start          # dev-сервер на http://localhost:8080/
+pnpm build          # продакшн-сборка (typecheck + vite build + статика) → dist/
+pnpm run package    # портативный .exe (electron-builder, Windows x64) → electron-dist/
 ```
-This will install all the needed dependencies.
 
+Отладочные параметры запроса (например, `http://localhost:8080/?test=1`):
 
-#### Running web-server
-Just run `pnpm start` to start the web server and the livereload task.
-Open http://localhost:8080/ in your browser.
+- **`test=1`** — тестовые DC,
+- **`debug=1`** — подробное логирование,
+- **`noSharedWorker=1`** — отключение Shared Worker,
+- **`http=1`** — принудительный HTTPS-транспорт к серверам Telegram.
 
+---
 
-#### Running in production
+## 👻 Режим невидимки
 
-Run `node build` to build the minimized production version of the app. Copy `public` folder contents to your web server.
+Скрывает ваш онлайн-статус, время последнего посещения и метки о прочтении. Отправка сообщения, звонок или реакция могут выдать присутствие; счётчики непрочитанного могут вернуться после следующей синхронизации.
 
-### Running in docker
+---
 
-#### Developing: 
-* Install dependencies `docker-compose up tweb.dependencies`.
-* Run develop container `docker-compose up tweb.develop `.
-* Open http://localhost:8080/ in your browser. 
+## 🔗 Ссылки
 
-#### Production:
-* Run `docker-compose up tweb.production -d` nginx image and container to serve the build
-* Open http://localhost:80/ in your browser.
+- Исходный код: [github.com/Aliev123kirill/Duckgram](https://github.com/Aliev123kirill/Duckgram)
+- Релизы: [github.com/Aliev123kirill/Duckgram/releases](https://github.com/Aliev123kirill/Duckgram/releases)
 
-You can use `docker build -f ./.docker/Dockerfile_production -t {dockerhub-username}/{imageName}:{latest} .` to build your production ready image.
+## 📄 Лицензия
 
-### Dependencies
-* [BigInteger.js](https://github.com/peterolson/BigInteger.js) ([Unlicense](https://github.com/peterolson/BigInteger.js/blob/master/LICENSE))
-* [fflate](https://github.com/101arrowz/fflate) ([MIT License](https://github.com/101arrowz/fflate/blob/master/LICENSE))
-* [cryptography](https://github.com/spalt08/cryptography) ([Apache License 2.0](https://github.com/spalt08/cryptography/blob/master/LICENSE))
-* [emoji-data](https://github.com/iamcal/emoji-data) ([MIT License](https://github.com/iamcal/emoji-data/blob/master/LICENSE))
-* [emoji-test-regex-pattern](https://github.com/mathiasbynens/emoji-test-regex-pattern) ([MIT License](https://github.com/mathiasbynens/emoji-test-regex-pattern/blob/main/LICENSE))
-* [tlottie](https://github.com/dkaraush/tlottie) (MIT License)
-* [fast-png](https://github.com/image-js/fast-png) ([MIT License](https://github.com/image-js/fast-png/blob/master/LICENSE))
-* [opus-recorder](https://github.com/chris-rudmin/opus-recorder) ([BSD License](https://github.com/chris-rudmin/opus-recorder/blob/master/LICENSE.md))
-* [Prism](https://github.com/PrismJS/prism) ([MIT License](https://github.com/PrismJS/prism/blob/master/LICENSE))
-* [Solid](https://github.com/solidjs/solid) ([MIT License](https://github.com/solidjs/solid/blob/main/LICENSE))
-* [TinyLD](https://github.com/komodojp/tinyld) ([MIT License](https://github.com/komodojp/tinyld/blob/develop/license))
-* [libwebp.js](https://libwebpjs.appspot.com/)
-* fastBlur
-* [Mediabunny](https://github.com/Vanilagy/mediabunny) ([Mozilla Public License 2.0](https://github.com/Vanilagy/mediabunny/blob/main/LICENSE))
-* [Temml](https://github.com/ronkok/Temml) ([MIT License](https://github.com/ronkok/Temml/blob/main/LICENSE))
-
-### Debugging
-You are welcome in helping to minimize the impact of bugs. There are classes, binded to global context. Look through the code for certain one and just get it by its name in developer tools.
-Source maps are included in production build for your convenience.
-
-#### Additional query parameters
-* **test=1**: to use test DCs
-* **debug=1**: to enable additional logging
-* **noSharedWorker=1**: to disable Shared Worker, can be useful for debugging
-* **http=1**: to force the use of HTTPS transport when connecting to Telegram servers
-
-Should be applied like that: http://localhost:8080/?test=1
-
-#### Taking local storage snapshots
-You can also take and load snapshots of the local storage and indexed DB using the `./snapshot-server` [mini-app](/snapshot-server/README.md). Check the `README.md` under this folder for more details.
-
-#### Preview all icons
-You can see all the available svg icons by calling the `showIconLibrary()` global function in the browser's console.
-
-### Troubleshooting & Suggesting
-
-If you find an issue with this app or wish something to be added, let Telegram know using the [Suggestions Platform](https://bugs.telegram.org/c/4002).
-
-### Licensing
-
-The source code is licensed under GPL v3. License is available [here](/LICENSE).
+Код основан на **tweb (Telegram Web K)** (Eduard Kuzmenko) и распространяется под **GPL v3** — см. `LICENSE`.
