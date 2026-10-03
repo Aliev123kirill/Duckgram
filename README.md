@@ -1,6 +1,7 @@
 # 🦆 Duckgram
 
-**Duckgram** — полнофункциональный Telegram-клиент на базе проекта **tweb (Telegram Web K)**, собранный как настольное приложение для Windows. Работает напрямую через протокол **MTProto** — без сторонних API-обёрток. Включает **собственную технологию обхода блокировок**, работающую локально, без своего сервера и VPN.
+**Duckgram** — полнофункциональный Telegram-клиент на базе проекта **tweb (Telegram Web K)**, собранный как настольное приложение для Windows. Работает напрямую через  **Duckgram_fix
+** — без сторонних API-обёрток. Включает **собственную технологию обхода блокировок**, работающую локально, без своего сервера и VPN.
 
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)]()
 [![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)]()
