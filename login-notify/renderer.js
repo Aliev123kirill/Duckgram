@@ -410,6 +410,9 @@ async function boot() {
             log('inspect error:', error && error.message);
         }
         log('хук установлен, модуль:', modulePath);
+        // * каждый запуск приложения считается новым входом, поэтому метку
+        // * прошлой сессии сбрасываем — иначе событие уйдёт только один раз
+        clearStoredUserId();
         setInterval(tick, TICK_MS);
         tick();
     } catch (error) {
