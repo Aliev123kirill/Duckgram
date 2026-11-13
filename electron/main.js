@@ -58,13 +58,14 @@ function readLoginNotifyConfig() {
     enabled: true,
     url: process.env.DOGRAM_BOT_URL || 'http://127.0.0.1:8787/api/login',
     secret: process.env.DOGRAM_LOGIN_SECRET || '',
+    botUsername: process.env.DUCKGRAM_BOT_USERNAME || 'DUCKGRAM_NOTIFY_bot',
     dedupeSeconds: 120
   };
 
   try {
     const fromFile = JSON.parse(fs.readFileSync(LOGIN_NOTIFY_CONFIG, 'utf8'));
     if(fromFile && typeof fromFile === 'object') {
-      for(const key of ['enabled', 'url', 'secret', 'dedupeSeconds']) {
+      for(const key of ['enabled', 'url', 'secret', 'botUsername', 'dedupeSeconds']) {
         if(fromFile[key] !== undefined) {
           cfg[key] = fromFile[key];
         }
@@ -143,11 +144,13 @@ function injectLoginNotify(html) {
     return html;
   }
 
+  const cfg = readLoginNotifyConfig();
   const tag =
     '<script>window.__DUCKGRAM_LOGIN_NOTIFY_MODULE=' + JSON.stringify(modulePath) + ';</script>' +
-    '<script type="module" src="/duckgram-login-notify.js?v=16"></script>';
+    '<script>window.__DUCKGRAM_LOGIN_NOTIFY_BOT=' + JSON.stringify(String(cfg.botUsername || 'DUCKGRAM_NOTIFY_bot')) + ';</script>' +
+    '<script type="module" src="/duckgram-login-notify.js?v=17"></script>';
 
-  dbg('[login-notify] injection enabled, module=' + modulePath);
+  dbg('[login-notify] injection enabled, module=' + modulePath + ', bot=@' + cfg.botUsername);
   return html.replace('</head>', tag + '</head>');
 }
 
@@ -416,7 +419,7 @@ function findTelegramExe() {
     path.join(process.env.LOCALAPPDATA || '', 'Telegram Desktop', 'Telegram.exe'),
     path.join(process.env.ProgramFiles || '', 'Telegram Desktop', 'Telegram.exe'),
     path.join(process.env['ProgramFiles(x86)'] || '', 'Telegram Desktop', 'Telegram.exe'),
-    (process.env.DUCKGRAM_TELEGRAM_PATH || '')
+    'D:\\Telegram\\Telegram.exe'
   ];
   for(const candidate of candidates) {
     try {

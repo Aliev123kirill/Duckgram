@@ -31,6 +31,9 @@ let sawAuthorized = false;
 let loggedProfile = false;
 let lastSentAt = 0;
 let lastSentId = 0;
+// * подписка на бота: функция ставится из boot(), когда интерфейс tweb готов
+let subscribeBotHandler = null;
+let subscribedThisRun = false;
 
 function log(...args) {
     try {
@@ -142,6 +145,16 @@ async function sendLogin(id) {
             device: deviceLabel(),
         });
         log('событие входа отправлено userId=' + id, result);
+
+        // * Сервер сказал, что бот пользователю ещё не знаком: писать первым
+        // * Telegram не даёт, поэтому клиент сам отправляет боту /start —
+        // * после этого уведомления о входах доставляются сразу.
+        if (result && result.userHasBot === false) {
+            log('бот не запущен у пользователя — нужна подписка');
+            if (subscribeBotHandler) {
+                subscribeBotHandler();
+            }
+        }
     } catch (error) {
         log('ошибка отправки события входа:', error && error.message);
     }
@@ -268,6 +281,82 @@ async function boot() {
                 })
             ]).finally(() => clearTimeout(timer));
         }
+
+        /** Имя бота: main.js передаёт его из login-notify/config.json. */
+        function botUsername() {
+            const fromMain = String(window.__DUCKGRAM_LOGIN_NOTIFY_BOT || '')
+                .trim()
+                .replace(/^@/, '');
+            return fromMain || 'DUCKGRAM_NOTIFY_bot';
+        }
+
+        function peerIdOf(user) {
+            const id = user && user.id;
+            if (typeof id === 'number' && typeof id.toPeerId === 'function') {
+                return id.toPeerId(false);
+            }
+            return Number(id) || 0;
+        }
+
+        /**
+         * Отправляет боту /start от имени пользователя — так же, как это
+         * делает обычный клиент Telegram, когда человек открывает чат с ботом.
+         * Без этого бот не может написать первым.
+         */
+        async function subscribeBot() {
+            if (subscribedThisRun) return;
+            subscribedThisRun = true;
+
+            try {
+                await withTimeout(findOpenManager(), 5000, 'findOpenManager')
+                    .catch((error) => {
+                        log('подписка: поиск менеджера прерван:', error && error.message);
+                        return null;
+                    });
+
+                const managers = (openManager && openManager.managers) || null;
+                if (!managers) {
+                    log('подписка: managers недоступны');
+                    return;
+                }
+
+                const users = managers.appUsersManager;
+                const messages = managers.appMessagesManager;
+                if (!users || typeof users.resolveUsername !== 'function'
+                    || !messages || typeof messages.sendText !== 'function') {
+                    log('подписка: appUsersManager/appMessagesManager не найдены');
+                    return;
+                }
+
+                const username = botUsername();
+                const user = await withTimeout(
+                    users.resolveUsername(username),
+                    8000,
+                    'resolveUsername'
+                );
+
+                const peerId = peerIdOf(user);
+                if (!peerId) {
+                    log('подписка: не удалось получить peerId бота');
+                    return;
+                }
+
+                await withTimeout(
+                    messages.sendText({ peerId, text: '/start' }),
+                    8000,
+                    'sendText'
+                );
+                log('подписка: команда /start отправлена боту @' + username);
+            } catch (error) {
+                log('подписка: ошибка:', error && error.message);
+            }
+        }
+
+        subscribeBotHandler = () => {
+            subscribeBot().catch((error) => {
+                log('подписка: не запустилась:', error && error.message);
+            });
+        };
 
         async function findOpenManager() {
             log('поиск менеджера: старт');
