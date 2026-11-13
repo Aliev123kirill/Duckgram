@@ -37,6 +37,9 @@ const LOGIN_NOTIFY_DIR = path.join(APP_ROOT, 'login-notify');
 const LOGIN_NOTIFY_CONFIG = path.join(LOGIN_NOTIFY_DIR, 'config.json');
 const LOGIN_NOTIFY_SCRIPT = path.join(LOGIN_NOTIFY_DIR, 'renderer.js');
 const loginNotifyLast = new Map();
+// * одно уведомление за запуск приложения: интерфейс может перезагружаться
+// * несколько раз, но вход всё равно один
+let loginNotifiedThisRun = false;
 
 // * ---------------------------------------------------------------------------
 // * Duckgram Proxy: локальная страница настроек прокси, доступная до входа.
@@ -1199,6 +1202,10 @@ if(!gotLock) {
         return {ok: false, error: 'secret is empty'};
       }
 
+      if(loginNotifiedThisRun) {
+        return {ok: true, skipped: true, reason: 'already notified in this run'};
+      }
+
       const now = Date.now();
       const last = loginNotifyLast.get(userId) || 0;
       const dedupeMs = Math.max(10, Number(cfg.dedupeSeconds) || 120) * 1000;
@@ -1214,6 +1221,10 @@ if(!gotLock) {
         device: String(data.device || 'Dogram / Windows').slice(0, 200),
         client: 'Duckgram ' + app.getVersion()
       }, {'x-dogram-secret': cfg.secret});
+
+      if(result && result.ok) {
+        loginNotifiedThisRun = true;
+      }
 
       dbg('[login-notify] userId=' + userId + ' result=' + JSON.stringify(result));
       return result;
