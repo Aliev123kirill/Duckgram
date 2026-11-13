@@ -30,3 +30,7 @@ ignore
 /blob-report/
 .env
 .claude/bugs-cache
+
+# Локальный конфиг клиента (содержит секрет)
+login-notify/config.json
+login-notify/backup/

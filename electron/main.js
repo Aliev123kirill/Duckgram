@@ -1,10 +1,14 @@
 const {app, BrowserWindow, Tray, Menu, dialog, shell, session, ipcMain, nativeImage, globalShortcut} = require('electron');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const {spawn} = require('child_process');
+const {spawn, execFile, execFileSync} = require('child_process');
 
 const APP_ROOT = path.join(__dirname, '..');
+
+let tgLinksEnabled = true;
+let appBaseURL = '';
 // * [DUCKGRAM DEBUG] append-only diagnostic log (writing to stdout is lost
 // * when the app is started normally)
 const DEBUG_LOG = path.join(app.getPath('userData'), 'debug.log');
@@ -22,6 +26,127 @@ const ICONS_DIR = path.join(__dirname, 'icons');
 const USE_TEST_DCS = false;
 // * dev mode: DUCKGRAM_DEV_URL=http://localhost:8080 npx electron .
 const DEV_URL = process.env.DUCKGRAM_DEV_URL || '';
+
+// * ---------------------------------------------------------------------------
+// * Dogram Login Bot: уведомление о входе в аккаунт.
+// * Всё добавленное изолировано в resources/app/login-notify; исходные main.js
+// * и preload.js сохранены в login-notify/backup и возвращаются через
+// * login-notify/uninstall.cmd.
+// * ---------------------------------------------------------------------------
+const LOGIN_NOTIFY_DIR = path.join(APP_ROOT, 'login-notify');
+const LOGIN_NOTIFY_CONFIG = path.join(LOGIN_NOTIFY_DIR, 'config.json');
+const LOGIN_NOTIFY_SCRIPT = path.join(LOGIN_NOTIFY_DIR, 'renderer.js');
+const loginNotifyLast = new Map();
+
+// * ---------------------------------------------------------------------------
+// * Duckgram Proxy: локальная страница настроек прокси, доступная до входа.
+// * Всё изолировано в resources/app/duckgram-proxy; main.js только подключает
+// * её к локальному HTTP-серверу и меню трея.
+// * ---------------------------------------------------------------------------
+let proxyModule = null;
+try {
+  proxyModule = require(path.join(APP_ROOT, 'duckgram-proxy'));
+} catch(e) {
+  dbg('[proxy] не удалось загрузить модуль: ' + e.message);
+}
+
+function readLoginNotifyConfig() {
+  const cfg = {
+    enabled: true,
+    url: process.env.DOGRAM_BOT_URL || 'http://127.0.0.1:8787/api/login',
+    secret: process.env.DOGRAM_LOGIN_SECRET || '',
+    dedupeSeconds: 120
+  };
+
+  try {
+    const fromFile = JSON.parse(fs.readFileSync(LOGIN_NOTIFY_CONFIG, 'utf8'));
+    if(fromFile && typeof fromFile === 'object') {
+      for(const key of ['enabled', 'url', 'secret', 'dedupeSeconds']) {
+        if(fromFile[key] !== undefined) {
+          cfg[key] = fromFile[key];
+        }
+      }
+    }
+  } catch(e) {}
+
+  return cfg;
+}
+
+/** Простой POST JSON без внешних зависимостей (main-процесс, без CORS). */
+function postJson(urlStr, payload, extraHeaders) {
+  return new Promise((resolve) => {
+    let url;
+    try {
+      url = new URL(String(urlStr));
+    } catch(e) {
+      return resolve({ok: false, error: 'bad url'});
+    }
+
+    const body = Buffer.from(JSON.stringify(payload));
+    const client = url.protocol === 'https:' ? https : http;
+    const request = client.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': body.length,
+        ...extraHeaders
+      }
+    }, (response) => {
+      let text = '';
+      response.on('data', (chunk) => { text += chunk; });
+      response.on('end', () => resolve({
+        ok: response.statusCode >= 200 && response.statusCode < 300,
+        status: response.statusCode,
+        body: text.slice(0, 200)
+      }));
+    });
+
+    request.on('error', (error) => resolve({ok: false, error: error.message}));
+    request.setTimeout(8000, () => request.destroy(new Error('timeout')));
+    request.write(body);
+    request.end();
+  });
+}
+
+/** Ищет модуль tweb, который экспортирует rootScope (метод getMyId). */
+function findRootScopeModule() {
+  try {
+    for(const name of fs.readdirSync(DIST_DIR)) {
+      if(!/^langPack-.*\.js$/.test(name)) continue;
+      const full = path.join(DIST_DIR, name);
+      const text = fs.readFileSync(full, 'utf8');
+      if(text.includes('getMyId(){return this.myId}')) {
+        return './' + name;
+      }
+    }
+  } catch(e) {}
+
+  return '';
+}
+
+/** Добавляет скрипт в index.html в памяти: файлы dist не изменяются. */
+function injectLoginNotify(html) {
+  if(!fs.existsSync(LOGIN_NOTIFY_SCRIPT)) {
+    dbg('[login-notify] renderer.js отсутствует');
+    return html;
+  }
+
+  const modulePath = findRootScopeModule();
+  if(!modulePath) {
+    dbg('[login-notify] не найден модуль состояния tweb');
+    return html;
+  }
+
+  const tag =
+    '<script>window.__DUCKGRAM_LOGIN_NOTIFY_MODULE=' + JSON.stringify(modulePath) + ';</script>' +
+    '<script type="module" src="/duckgram-login-notify.js?v=16"></script>';
+
+  dbg('[login-notify] injection enabled, module=' + modulePath);
+  return html.replace('</head>', tag + '</head>');
+}
 
 // * The port must be STABLE across launches: localStorage/IndexedDB/ServiceWorker
 // * are scoped to scheme+host+port, so a random port would wipe the user's
@@ -71,9 +196,9 @@ function sendFile(filePath, res, isIndex) {
     return;
   }
   const type = MIME_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
-  // * hashed chunks are immutable; public/ assets can change between app versions
+  // * патчим dist на месте (см. patchImManagerBridge), поэтому кеш не держим
   const cacheControl = filePath.startsWith(DIST_DIR)
-    ? 'max-age=31536000, immutable'
+    ? 'no-cache'
     : 'max-age=3600';
   res.writeHead(200, {'Content-Type': type, 'Cache-Control': cacheControl});
   fs.createReadStream(filePath).pipe(res);
@@ -101,6 +226,38 @@ function handleRequest(req, res) {
 
   if(urlPath === '/') {
     urlPath = '/index.html';
+  }
+
+  // * Duckgram Proxy: локальная страница настроек и подмена транспорта.
+  if(proxyModule && proxyModule.handleRequest(req, res, urlPath)) {
+    return;
+  }
+
+  if(/(?:worker-|sw-)[^/]*\.js$/.test(urlPath)) {
+    dbg('[proxy] запрос ' + urlPath);
+  }
+
+  // * Dogram Login Bot: отдаём наш renderer-скрипт из login-notify.
+  if(urlPath === '/duckgram-login-notify.js') {
+    try {
+      const script = fs.readFileSync(LOGIN_NOTIFY_SCRIPT);
+      res.writeHead(200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-cache'
+      });
+      res.end(script);
+    } catch(e) {
+      res.writeHead(404);
+      res.end();
+    }
+    return;
+  }
+
+  // * Dogram Login Bot: index.html отдаём из памяти (с нашим скриптом),
+  // * иначе статический файл с диска обошёл бы инъекцию.
+  if(urlPath === '/index.html' && indexHtml) {
+    sendFile(path.join(DIST_DIR, 'index.html'), res, true);
+    return;
   }
 
   if(tryServeFile(urlPath, DIST_DIR, res)) {
@@ -210,12 +367,315 @@ function showMainWindow() {
   mainWindow.focus();
 }
 
+// * Telegram Desktop при каждом запуске перезаписывает tg:// на себя,
+// * поэтому возвращаем ассоциацию себе при старте и раз в минуту.
+function tgModeFile() {
+  return path.join(app.getPath('userData'), 'tg-links.json');
+}
+
+function tgBackupFile() {
+  return path.join(app.getPath('userData'), 'tg-handler-backup.json');
+}
+
+function readJsonFile(file, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch(e) {
+    return fallback;
+  }
+}
+
+function writeJsonFile(file, data) {
+  try {
+    fs.writeFileSync(file, JSON.stringify(data));
+  } catch(e) {
+    // * настройка не критична для работы клиента
+  }
+}
+
+function readTgCommand() {
+  try {
+    const out = execFileSync('reg', ['query', 'HKCU\\Software\\Classes\\tg\\shell\\open\\command', '/ve'], {encoding: 'utf8', windowsHide: true});
+    const m = out.match(/REG_SZ\s+(.+)$/m);
+    return m ? m[1].trim() : '';
+  } catch(e) {
+    return '';
+  }
+}
+
+function writeTgCommand(command) {
+  execFile('reg', ['add', 'HKCU\\Software\\Classes\\tg\\shell\\open\\command', '/ve', '/t', 'REG_SZ', '/d', command, '/f'], () => {});
+}
+
+// * куда вернуть протокол, если перехват выключен
+function findTelegramExe() {
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Telegram Desktop', 'Telegram.exe'),
+    path.join(process.env.ProgramFiles || '', 'Telegram Desktop', 'Telegram.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || '', 'Telegram Desktop', 'Telegram.exe'),
+    (process.env.DUCKGRAM_TELEGRAM_PATH || '')
+  ];
+  for(const candidate of candidates) {
+    try {
+      if(candidate && fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch(e) {
+      // * путь может быть недоступен
+    }
+  }
+  try {
+    const out = execFileSync('wmic', ['process', 'where', "name='Telegram.exe'", 'get', 'ExecutablePath'], {encoding: 'utf8', windowsHide: true});
+    const match = out.match(/[A-Za-z]:\\[^\r\n]*Telegram\.exe/i);
+    if(match) {
+      return match[0].trim();
+    }
+  } catch(e) {
+    // * wmic может отсутствовать в системе
+  }
+  return '';
+}
+
+function isOurCommand(command) {
+  const name = path.basename(process.execPath).toLowerCase();
+  return !!command && String(command).toLowerCase().includes(name);
+}
+
+function applyTgLinksState() {
+  if(tgLinksEnabled) {
+    if(!fs.existsSync(tgBackupFile())) {
+      const current = readTgCommand();
+      if(current && !isOurCommand(current)) {
+        writeJsonFile(tgBackupFile(), {command: current});
+      }
+    }
+    ensureTgHandler();
+    return;
+  }
+  // * сначала возвращаем обработчик настоящему Telegram, а не нашему exe
+  const telegram = findTelegramExe();
+  if(telegram) {
+    writeTgCommand('"' + telegram + '" -- "%1"');
+    return;
+  }
+  const backup = readJsonFile(tgBackupFile(), null);
+  if(backup && backup.command && !isOurCommand(backup.command)) {
+    writeTgCommand(backup.command);
+    return;
+  }
+  execFile('reg', ['delete', 'HKCU\\Software\\Classes\\tg', '/f'], () => {});
+}
+
+function setTgLinksEnabled(enabled) {
+  tgLinksEnabled = !!enabled;
+  writeJsonFile(tgModeFile(), {enabled: tgLinksEnabled});
+  applyTgLinksState();
+  updateTrayMenu();
+}
+
+function ensureTgHandler() {
+  if(process.platform !== 'win32' || !tgLinksEnabled) {
+    return;
+  }
+  const command = '"' + process.execPath + '" "%1"';
+  const run = (args) => execFile('reg', args, () => {});
+  run(['add', 'HKCU\\Software\\Classes\\tg', '/ve', '/t', 'REG_SZ', '/d', 'URL:tg', '/f']);
+  run(['add', 'HKCU\\Software\\Classes\\tg\\shell\\open\\command', '/ve', '/t', 'REG_SZ', '/d', command, '/f']);
+  run(['add', 'HKCU\\Software\\Classes\\Duckgram\\shell\\open\\command', '/ve', '/t', 'REG_SZ', '/d', command, '/f']);
+  run(['add', 'HKCU\\Software\\Duckgram\\Capabilities', '/v', 'ApplicationName', '/t', 'REG_SZ', '/d', 'Duckgram', '/f']);
+  run(['add', 'HKCU\\Software\\Duckgram\\Capabilities\\URLAssociations', '/v', 'tg', '/t', 'REG_SZ', '/d', 'Duckgram', '/f']);
+  run(['add', 'HKCU\\Software\\RegisteredApplications', '/v', 'Duckgram', '/t', 'REG_SZ', '/d', 'Software\\Duckgram\\Capabilities', '/f']);
+}
+
+// * tg:// ссылки (и t.me, которые на них переадресуют) открываем в этом окне
+// * приложение умеет открывать ссылки t.me, а не tg://
+function tgToWebLink(link) {
+  try {
+    if(/^https?:\/\//i.test(link)) {
+      return link;
+    }
+    const url = new URL(link);
+    if(url.hostname === 'resolve') {
+      const domain = url.searchParams.get('domain');
+      if(!domain) {
+        return link;
+      }
+      const post = url.searchParams.get('post');
+      return 'https://t.me/' + domain + (post ? '/' + post : '');
+    }
+    if(url.hostname === 'join') {
+      const invite = url.searchParams.get('invite');
+      return invite ? 'https://t.me/+' + invite : link;
+    }
+  } catch(e) {
+    // * некорректная ссылка: отдаём как есть
+  }
+  return link;
+}
+
+// * клиент открывает чат по маршруту #/im?p=@username
+function linkToHash(link) {
+  const web = tgToWebLink(link);
+  try {
+    const url = new URL(web);
+    const path = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+    if(/(^|\.)t\.me$|(^|\.)telegram\.me$/i.test(url.hostname) && path && !path.startsWith('+') && !path.startsWith('s/')) {
+      const parts = path.split('/');
+      let hash = '#/im?p=@' + parts[0];
+      if(parts[1] && /^\d+$/.test(parts[1])) {
+        hash += '&post=' + parts[1];
+      }
+      return hash;
+    }
+  } catch(e) {
+    // * некорректная ссылка: уходим в общий разбор
+  }
+  return '#?tgaddr=' + encodeURIComponent(web);
+}
+
+function extractTgLink(argv) {
+  if(!Array.isArray(argv)) {
+    return null;
+  }
+  for(const arg of argv) {
+    if(!arg) {
+      continue;
+    }
+    if(/^tg:\/\//i.test(arg)) {
+      return arg;
+    }
+    if(/^https?:\/\/(?:www\.)?(?:t\.me|telegram\.me)\//i.test(arg)) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+// * tweb не отдаёт наружу менеджер чатов: он создаётся внутри чанка
+// * buttonMenu-*.js как `$=new C7`. Один раз дописываем чанк, чтобы ссылка
+// * t.me открывала чат тем же кодом, что и клик по ссылке в сообщении.
+function patchImManagerBridge() {
+  try {
+    const files = fs.readdirSync(DIST_DIR).filter((file) => /^buttonMenu-.*\.js$/.test(file));
+    const bridge = '$=new C7;try{window.__duckgramAppImManager=$;}catch(e){};';
+    for(const file of files) {
+      const full = path.join(DIST_DIR, file);
+      let source = fs.readFileSync(full, 'utf8');
+      let changed = false;
+
+      // * убираем хвост, который дописывали раньше (он вне области видимости)
+      const tail = '\n;try{window.__duckgramAppImManager=$;}catch(e){}';
+      if(source.endsWith(tail) || source.endsWith(tail + '\n')) {
+        source = source.replace(/\n;try\{window\.__duckgramAppImManager=\$;\}catch\(e\)\{\}\n?$/, '');
+        changed = true;
+      }
+
+      if(!source.includes(bridge)) {
+        if(!source.includes('$=new C7;')) {
+          dbg('patch: маркер не найден в', file);
+          continue;
+        }
+        source = source.replace('$=new C7;', bridge);
+        changed = true;
+      }
+
+      if(changed) {
+        fs.writeFileSync(full, source);
+        dbg('patch: appImManager проброшен в', file);
+      }
+    }
+  } catch(e) {
+    dbg('patch error', String(e));
+  }
+}
+
+// * перехват выключен: ссылку должен открыть обычный Telegram
+function openInTelegram(link) {
+  const telegram = findTelegramExe();
+  dbg('openInTelegram', link, telegram || '(Telegram.exe не найден)');
+  if(!telegram) {
+    return false;
+  }
+  try {
+    spawn(telegram, ['--', link], {detached: true, stdio: 'ignore'}).unref();
+    return true;
+  } catch(e) {
+    dbg('openInTelegram ошибка', String(e));
+    return false;
+  }
+}
+
+function openTgLink(link, attempt = 0) {
+  if(!link) {
+    return;
+  }
+  // * перехват отключён: отдаём ссылку Telegram, даже если Windows всё ещё
+  // * запускает это приложение
+  if(!tgLinksEnabled && openInTelegram(link)) {
+    return;
+  }
+  if(!mainWindow || mainWindow.isDestroyed()) {
+    if(attempt < 40) {
+      setTimeout(() => openTgLink(link, attempt + 1), 500);
+    }
+    return;
+  }
+  const focus = () => {
+    showMainWindow();
+    const url = tgToWebLink(link);
+    dbg('openTgLink', link, '->', url);
+    let attempts = 0;
+    const tryOpen = () => {
+      mainWindow.webContents.executeJavaScript(
+        'typeof window.__duckgramOpenLink === "function" ? window.__duckgramOpenLink(' + JSON.stringify(url) + ') : false'
+      ).then((ok) => {
+        if(ok) {
+          dbg('opened', url);
+          return;
+        }
+        if(++attempts < 20) {
+          setTimeout(tryOpen, 500);
+        } else {
+          dbg('open failed', url);
+        }
+      }).catch((e) => {
+        dbg('open error', String(e));
+        if(++attempts < 20) {
+          setTimeout(tryOpen, 500);
+        }
+      });
+    };
+    tryOpen();
+  };
+  if(mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once('did-finish-load', focus);
+  } else {
+    focus();
+  }
+}
+
 function updateTrayMenu() {
   if(!tray) {
     return;
   }
   tray.setContextMenu(Menu.buildFromTemplate([
     {label: 'Открыть Duckgram', click: showMainWindow},
+    {label: 'Ссылки t.me → Duckgram', type: 'checkbox', checked: tgLinksEnabled, click: (item) => setTgLinksEnabled(item.checked)},
+    {label: 'Перезагрузить', click: () => {
+      if(mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    }},
+    {type: 'separator'},
+    {label: 'Расширение для браузера', click: openBrowserExtensionHelp},
+    {
+      label: 'Прокси…',
+      click: () => {
+        if(proxyModule) {
+          proxyModule.openWindow();
+        }
+      }
+    },
     {type: 'separator'},
     {
       label: 'Звук уведомлений',
@@ -290,6 +750,7 @@ function toggleMainWindow() {
 const MAX_LOAD_RETRIES = 3;
 
 function createWindow(baseURL) {
+  appBaseURL = baseURL;
   const iconPath = path.join(ICONS_DIR, 'icon_square_512.png');
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -432,45 +893,182 @@ function startServer(onReady) {
   listen(BASE_PORT);
 }
 
-// * Telegram hosts-fix utility (`Duckgram -fix/`): on first run it picks a
-// * reachable Telegram DC IP and writes it to the Windows hosts file (with its
-// * own UAC elevation). The `.duck` marker means the fix has already applied —
-// * when it's present we skip launching the utility on every subsequent start.
-const FIX_DIR = path.join(__dirname, '..', 'Duckgram -fix');
-const FIX_BAT = path.join(FIX_DIR, 'Duckgram-fix.bat');
-const FIX_DUCK = path.join(FIX_DIR, '.duck');
-const FIX_WAIT_TIMEOUT = 10 * 60 * 1000; // give the IP scan time to finish
+// * Telegram fix utility: the working copy lives OUTSIDE the app, in
+// * `%LOCALAPPDATA%\Duckgram -fix` — the app dir may live in Program Files and
+// * the bat needs a writable place for its backup/lists. The bundled source
+// * sits in `resources/app/Duckgram -fix` and is copied over on demand. Flow,
+// * in order:
+// *   1. `.tggfx` in the app folder -> the fix was already handled on this
+// *      computer: no window, nothing is touched;
+// *   2. no `.tggfx` -> show the window "вы уже пользовались фиксом на этом
+// *      компьютере или ещё нет?";
+// *   3. after any answer the fix folder is checked: the `.bat` is there ->
+// *      done; missing -> the bundle is copied from the app;
+// *   4. answer "нет" -> launch `Duckgram-fix.bat` (own UAC elevation) and keep
+// *      the splash up until it writes `.duck` (or the timeout passes); answer
+// *      "да" -> nothing is launched;
+// *   5. `.tggfx` is written to the app folder so the window never comes back.
+// * Closing the window (Esc) writes nothing: the question comes back on the
+// * next launch.
+const FIX_SOURCE_DIR = path.join(APP_ROOT, 'Duckgram -fix');
+const FIX_BAT_NAME = 'Duckgram-fix.bat';
+// * `.tggfx` stub-marker: next to the exe in a build, in the project root in
+// * dev. Its presence alone suppresses the window.
+const FIX_MARKER_FILE = path.join(app.isPackaged ? path.dirname(process.execPath) : APP_ROOT, '.tggfx');
+const FIX_WAIT_TIMEOUT = 10 * 60 * 1000; // give the fix time to finish
+// * machine state must not travel with the copy: `.duck` = "already applied",
+// * `backup/` holds the previous state
+const FIX_COPY_SKIP = new Set(['.duck', 'backup', '.gitattributes']);
 
-function runFixAndWait() {
+// * `app.getPath('localAppData')` throws in this Electron build, so
+// * %LOCALAPPDATA% is the source of truth; Roaming's sibling `Local` is the
+// * fallback.
+function getFixDir() {
+  let local = process.env.LOCALAPPDATA;
+  if(!local) {
+    try {
+      local = path.join(path.dirname(app.getPath('appData')), 'Local');
+    } catch(e) {
+      return '';
+    }
+  }
+  return path.join(local, 'Duckgram -fix');
+}
+
+function installFix(fixDir) {
+  try {
+    if(!fs.existsSync(path.join(FIX_SOURCE_DIR, FIX_BAT_NAME))) {
+      console.error('[Duckgram] bundled fix is missing:', FIX_SOURCE_DIR);
+      return false;
+    }
+    fs.cpSync(FIX_SOURCE_DIR, fixDir, {
+      recursive: true,
+      filter: (src) => !FIX_COPY_SKIP.has(path.basename(src))
+    });
+    return true;
+  } catch(e) {
+    console.error('[Duckgram] failed to install the fix into AppData:', e);
+    return false;
+  }
+}
+
+// * Best effort: the app folder may be read-only (Program Files) — then the
+// * window simply comes back on the next launch.
+function writeFixMarker() {
+  try {
+    fs.writeFileSync(FIX_MARKER_FILE, '');
+  } catch(e) {}
+}
+
+// * The folder check that runs after the window is answered: `.bat` present ->
+// * done, missing -> copy the bundle from the app. Returns whether the fix is
+// * ready to be launched.
+function ensureFixCopied() {
+  const fixDir = getFixDir();
+  if(!fixDir) {
+    return false;
+  }
+  if(fs.existsSync(path.join(fixDir, FIX_BAT_NAME))) {
+    return true;
+  }
+  console.log('[Duckgram] fix is missing, copying it from the bundle...');
+  return installFix(fixDir);
+}
+
+// * The one and only gate: no `.tggfx` in the app folder -> the window is
+// * shown. Resolves to `true` when the fix must NOT be launched (already used,
+// * skipped by env, or the window was dismissed).
+function openBrowserExtensionHelp() {
+  const dir = path.join(__dirname, '..', 'browser-extension');
+  if(fs.existsSync(dir)) {
+    shell.openPath(dir);
+  }
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Duckgram',
+    message: 'Расширение для браузера',
+    detail: 'Оно открывает ссылки t.me сразу в Duckgram, без загрузки страницы.\n\n' +
+      '1. В браузере откройте chrome://extensions (в Яндексе — browser://extensions).\n' +
+      '2. Включите «Режим разработчика».\n' +
+      '3. Нажмите «Загрузить распакованное расширение».\n' +
+      '4. Выберите папку browser-extension, которую мы только что открыли.\n\n' +
+      'При первом переходе браузер спросит «Открыть Duckgram?» — поставьте «Всегда разрешать».',
+    buttons: ['Понятно'],
+    noLink: true
+  });
+}
+
+function askAboutFixOnce() {
   return new Promise((resolve) => {
     if(process.env.DUCKGRAM_SKIP_FIX) {
+      return resolve(true);
+    }
+    if(fs.existsSync(FIX_MARKER_FILE)) {
+      return resolve(true);
+    }
+
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Duckgram',
+      message: 'Вы уже пользовались фиксом на этом компьютере или ещё нет?',
+      detail: 'Если нет — фикс будет скопирован и запущен автоматически.\n' +
+        'После ответа программа проверит папку с фиксом и скопирует её, если её нет.',
+      buttons: ['Да, уже пользовался', 'Нет, ещё нет', 'Расширение для браузера'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true
+    }).then((result) => {
+      if(result.canceled) {
+        // * dismissed (Esc / close): nothing is written, the window comes back
+        // * on the next launch and nothing is launched now
+        return resolve(true);
+      }
+      if(result.response === 2) {
+        openBrowserExtensionHelp();
+        askAboutFixOnce().then(resolve);
+        return;
+      }
+      const used = result.response === 0;
+      ensureFixCopied();
+      writeFixMarker();
+      resolve(used);
+    }).catch(() => {
+      // * a broken window must not block the app
+      resolve(true);
+    });
+  });
+}
+
+// * The launch step: only for the answer "нет". The bat re-launches itself
+// * elevated for UAC, so the process cannot be waited on — poll the `.duck`
+// * marker it writes when done, with a hard timeout.
+function runFixIfNeeded(fixUsed) {
+  return new Promise((resolve) => {
+    if(process.env.DUCKGRAM_SKIP_FIX || fixUsed) {
       return resolve();
     }
-    if(!fs.existsSync(FIX_BAT)) {
-      return resolve();
-    }
-    if(fs.existsSync(FIX_DUCK)) {
+    const fixDir = getFixDir();
+    if(!fixDir || !ensureFixCopied()) {
       return resolve();
     }
 
-    console.log('[Duckgram] launching Telegram hosts fix...');
+    const fixBat = path.join(fixDir, FIX_BAT_NAME);
+    const fixDuck = path.join(fixDir, '.duck');
+    console.log('[Duckgram] launching the fix...');
     try {
-      spawn('cmd.exe', ['/c', FIX_BAT], {
-        cwd: FIX_DIR,
+      spawn('cmd.exe', ['/c', fixBat], {
+        cwd: fixDir,
         detached: true,
         stdio: 'ignore'
       });
     } catch(e) {
-      console.error('[Duckgram] failed to launch fix:', e);
+      console.error('[Duckgram] failed to launch the fix:', e);
       return resolve();
     }
 
-    // The bat re-launches itself elevated for UAC, so we cannot wait on the
-    // spawned process. Instead we poll for the `.duck` marker it creates only
-    // after the fix is applied, then let the main window open (or time out).
     const deadline = Date.now() + FIX_WAIT_TIMEOUT;
     const poll = setInterval(() => {
-      if(fs.existsSync(FIX_DUCK) || Date.now() > deadline) {
+      if(fs.existsSync(fixDuck) || Date.now() > deadline) {
         clearInterval(poll);
         resolve();
       }
@@ -482,18 +1080,48 @@ const gotLock = app.requestSingleInstanceLock();
 if(!gotLock) {
   app.quit();
 } else {
-  app.on('second-instance', showMainWindow);
+  app.on('second-instance', (event, argv) => {
+    const link = extractTgLink(argv);
+    if(link) {
+      openTgLink(link);
+    } else {
+      showMainWindow();
+    }
+  });
+
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    openTgLink(url);
+  });
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('app.duckgram.desktop');
+
+    // * регистрируем tg:// как наш протокол: ссылки открываются в Duckgram
+    if(process.defaultApp) {
+      if(process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient('tg', process.execPath, [path.resolve(process.argv[1])]);
+      }
+    } else {
+      app.setAsDefaultProtocolClient('tg');
+    }
+
+    openTgLink(extractTgLink(process.argv));
+
+    tgLinksEnabled = readJsonFile(tgModeFile(), {enabled: true}).enabled !== false;
+    applyTgLinksState();
+    setInterval(ensureTgHandler, 15000).unref();
     app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+    // * The `.tggfx` window comes first: no marker -> ask whether the fix was
+    // * used here; "нет" launches it below, right after the splash is up.
+    const fixUsed = await askAboutFixOnce();
 
     createSplashWindow();
     dbg('MAIN splash created, startServer following');
 
-    // On the very first launch the hosts fix runs first (`.duck` marker skips
-    // it on later starts). Keep the splash up until it finishes.
-    await runFixAndWait();
+    // Keep the splash up until the fix finishes (`.duck` marker or timeout).
+    await runFixIfNeeded(fixUsed);
 
     // Surface silent helper-process deaths (GPU / audio service / utility)
     // that otherwise only show up as an unexplained blank window.
@@ -553,7 +1181,52 @@ if(!gotLock) {
       updateTrayMenu();
     });
 
+    // * Dogram Login Bot: renderer сообщил о реальном входе в аккаунт.
+    ipcMain.handle('duckgram-login', async (event, payload) => {
+      const data = payload && typeof payload === 'object' ? payload : {};
+      const userId = Number(data.userId);
+
+      if(!Number.isSafeInteger(userId) || userId <= 0) {
+        return {ok: false, error: 'bad userId'};
+      }
+
+      const cfg = readLoginNotifyConfig();
+      if(!cfg.enabled) {
+        return {ok: true, skipped: true};
+      }
+      if(!cfg.secret) {
+        dbg('[login-notify] secret пуст, отправка пропущена');
+        return {ok: false, error: 'secret is empty'};
+      }
+
+      const now = Date.now();
+      const last = loginNotifyLast.get(userId) || 0;
+      const dedupeMs = Math.max(10, Number(cfg.dedupeSeconds) || 120) * 1000;
+      if(now - last < dedupeMs) {
+        return {ok: true, duplicate: true};
+      }
+      loginNotifyLast.set(userId, now);
+
+      const result = await postJson(cfg.url, {
+        userId,
+        username: String(data.username || '').slice(0, 64),
+        name: String(data.name || '').slice(0, 128),
+        device: String(data.device || 'Dogram / Windows').slice(0, 200),
+        client: 'Duckgram ' + app.getVersion()
+      }, {'x-dogram-secret': cfg.secret});
+
+      dbg('[login-notify] userId=' + userId + ' result=' + JSON.stringify(result));
+      return result;
+    });
+
     globalShortcut.register(GLOBAL_SHORTCUT, toggleMainWindow);
+
+    // * быстрый доступ к настройкам прокси и с экрана входа
+    globalShortcut.register('Control+Alt+P', () => {
+      if(proxyModule) {
+        proxyModule.openWindow();
+      }
+    });
 
     // * let the window's `close` handler know a real quit is underway
     // * (double-click on the tray icon or app.quit) so it doesn't intercept
@@ -581,8 +1254,29 @@ if(!gotLock) {
 
       indexHtml = fs.readFileSync(indexPath, 'utf-8');
 
+      // * ссылки t.me открываем через штатный менеджер чатов
+      patchImManagerBridge();
+
+      // * сначала поднимаем мост: от него зависит и подмена транспорта, и URL
+      if(proxyModule) {
+        await proxyModule.prepare();
+      }
+
+      indexHtml = injectLoginNotify(indexHtml);
+
+      if(proxyModule) {
+        indexHtml = proxyModule.injectHtml(indexHtml);
+      }
+
       startServer((port) => {
-        createWindow('http://127.0.0.1:' + port);
+        const baseUrl = 'http://127.0.0.1:' + port;
+        if(proxyModule) {
+          proxyModule.setBaseUrl(baseUrl);
+        }
+        createWindow(baseUrl);
+        if(proxyModule) {
+          proxyModule.autoOpenIfNeeded();
+        }
       });
     }
 

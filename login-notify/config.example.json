@@ -1,0 +1,6 @@
+{
+  "enabled": true,
+  "url": "https://dogram-login-bot.velikijarhivmultimedia818.workers.dev/api/login",
+  "secret": "СЮДА_ВСТАВЬТЕ_СВОЙ_СЕКРЕТ",
+  "dedupeSeconds": 120
+}

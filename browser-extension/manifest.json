@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "Ссылки t.me в приложение",
+  "version": "1.0.0",
+  "description": "Открывает ссылки t.me в приложении вместо браузера",
+  "minimum_chrome_version": "102",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Ссылки t.me открываются в приложении",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "webNavigation",
+    "tabs",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://t.me/*",
+    "https://www.t.me/*",
+    "https://telegram.me/*",
+    "https://www.telegram.me/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "open.html",
+        "open.js",
+        "welcome.html",
+        "welcome.js",
+        "icons/*"
+      ],
+      "matches": [
+        "https://t.me/*",
+        "https://www.t.me/*",
+        "https://telegram.me/*",
+        "https://www.telegram.me/*"
+      ]
+    }
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArI4umdgk3W66dRUMwK9YYUEondw3KRLmMdVgvQVP3BO3vWDb/ZPbyFVaplXYHEl37zNrLlAuZl/dbmgBPkw+FwE1nCnUQ5w//PuDFM5eOKArCLKMfaovlzWhpQNXYKdECSOb/UpKOLZmUobg8nxc8tJf5+B06gwru9nSh7ala8wLwWIysZYm4Pu0Ra7LvSoBmAxt+fDMPVaBDvlOX5fhoI8wWqgYX/Vqlvz7aoAhdCLm2Exy1JLhkGo8576wtNWwowoWX2jK6Vib3MIKM1ncm+JhEKTF+St6MLdI7k+x7Wz4gOVEDt7sXoupfOWBOmFQvGdFe5cIosSY/QHTXDrHsQIDAQAB"
+}
