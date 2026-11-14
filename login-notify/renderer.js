@@ -12,27 +12,31 @@
  *    - tweb хранит состояние в модуле langPack-*.js, экспорт с методом
  *      getMyId(); путь к модулю передаёт main.js через
  *      window.__DUCKGRAM_LOGIN_NOTIFY_MODULE;
- *    - признак авторизации: у <body> нет класса has-auth-pages,
- *      а #page-chats не скрыт;
- *    - настоящий вход (номер + код, QR, регистрация) всегда проходит через
- *      экран авторизации #auth-pages. Открытие клиента с уже сохранённой
- *      сессией этого экрана не показывает — такое событие НЕ отправляется.
+ *    - настоящий вход (номер + код, QR, регистрация) не имеет аккаунта,
+ *      пока человек не авторизуется: getMyId() остаётся 0 всё время, пока
+ *      открыт экран входа;
+ *    - обычный запуск клиента с сохранённой сессией: id появляется почти
+ *      сразу (загрузка состояния), экрана входа по сути нет.
  *
- *  Уведомление уходит, только если в текущем запуске:
- *    - был показан экран входа и затем появились чаты; или
- *    - сменился id аккаунта по сравнению с сохранённым в localStorage.
+ *  Поэтому входом считается: аккаунта не было дольше AUTH_SCREEN_TICKS,
+ *  а затем он появился. Просто открытие клиента уведомление НЕ отправляет.
+ *  Флаг «экран входа был» хранится в sessionStorage: tweb перезагружает
+ *  интерфейс после входа, и без этого событие терялось бы.
  * ============================================================================
  */
 
 const LAST_USER_KEY = 'duckgram:loginNotify:lastUserId';
-const AUTH_SEEN_KEY = 'duckgram:loginNotify:authSeen';
+const AUTH_INTENT_KEY = 'duckgram:loginNotify:authIntent';
 const TICK_MS = 1000;
+// * сколько тиков подряд не должно быть аккаунта, чтобы счесть это экраном входа
+const AUTH_SCREEN_TICKS = 8;
 
 let rootScope = null;
 let sawAuthorized = false;
-// * экран входа реально показывался в этом запуске (вход/регистрация)
-let sawAuthScreen = false;
-let authScreenTicks = 0;
+// * сколько тиков подряд аккаунта нет: долго — значит открыт экран входа
+let unauthorizedTicks = 0;
+// * экран входа был в этом окне: следующий вход — настоящая авторизация
+let authIntent = false;
 let loggedProfile = false;
 let lastSentAt = 0;
 let lastSentId = 0;
@@ -102,18 +106,6 @@ function isAuthorized() {
     return true;
 }
 
-/** На экране действительно страница авторизации tweb. */
-function authScreenVisible() {
-    try {
-        if (document.body.classList.contains('has-auth-pages')) return true;
-        const pages = document.getElementById('auth-pages');
-        if (pages && pages.style.display !== 'none') return true;
-    } catch (_) {
-        /* интерфейс может быть ещё не готов */
-    }
-    return false;
-}
-
 function storedUserId() {
     try {
         return Number(localStorage.getItem(LAST_USER_KEY)) || 0;
@@ -138,28 +130,28 @@ function clearStoredUserId() {
     }
 }
 
-// * Факт экрана входа в этом окне. sessionStorage переживает перезагрузку
-// * интерфейса (tweb перезагружает страницу после входа), но очищается при
-// * закрытии клиента — поэтому обычный запуск по-прежнему молчит.
-function markAuthSeen() {
+// * Флаг «человек был на экране входа». sessionStorage переживает
+// * перезагрузку интерфейса (tweb перезагружает страницу после входа),
+// * но очищается при закрытии клиента.
+function markAuthIntent() {
     try {
-        sessionStorage.setItem(AUTH_SEEN_KEY, '1');
+        sessionStorage.setItem(AUTH_INTENT_KEY, '1');
     } catch (_) {
         /* не критично */
     }
 }
 
-function authSeenInThisRun() {
+function storedAuthIntent() {
     try {
-        return sessionStorage.getItem(AUTH_SEEN_KEY) === '1';
+        return sessionStorage.getItem(AUTH_INTENT_KEY) === '1';
     } catch (_) {
         return false;
     }
 }
 
-function clearAuthSeen() {
+function clearAuthIntent() {
     try {
-        sessionStorage.removeItem(AUTH_SEEN_KEY);
+        sessionStorage.removeItem(AUTH_INTENT_KEY);
     } catch (_) {
         /* не критично */
     }
@@ -206,20 +198,20 @@ async function sendLogin(id) {
 
 function tick() {
     const authorized = isAuthorized();
+    const id = currentUserId();
 
-    if (!authorized) {
-        // * Экран входа видим дольше одного тика — значит человек реально
-        // * авторизуется, а не просто видит мигание страницы при загрузке.
-        authScreenTicks = authScreenVisible() ? authScreenTicks + 1 : 0;
-        if (authScreenTicks >= 2 && !sawAuthScreen) {
-            sawAuthScreen = true;
-            markAuthSeen();
-            log('показан экран входа — ждём авторизации');
+    // * Аккаунта нет: это либо загрузка состояния, либо экран входа.
+    // * Если так дольше AUTH_SCREEN_TICKS — человек именно авторизуется.
+    if (!authorized || !id) {
+        unauthorizedTicks += 1;
+        if (unauthorizedTicks >= AUTH_SCREEN_TICKS && !authIntent) {
+            authIntent = true;
+            markAuthIntent();
+            log('экран входа дольше ' + AUTH_SCREEN_TICKS + ' с — ждём авторизации');
         }
 
-        // Выход из аккаунта: стираем метку, чтобы следующий вход снова
-        // считался новым. На старте приложения этот блок не срабатывает:
-        // sawAuthorized ещё false, пока сессия не восстановилась.
+        // * Выход из аккаунта: метку стираем, чтобы следующий вход снова
+        // * считался новым.
         if (sawAuthorized) {
             sawAuthorized = false;
             clearStoredUserId();
@@ -229,10 +221,7 @@ function tick() {
     }
 
     sawAuthorized = true;
-    authScreenTicks = 0;
-
-    const id = currentUserId();
-    if (!id) return;
+    unauthorizedTicks = 0;
 
     if (!loggedProfile) {
         loggedProfile = true;
@@ -240,15 +229,14 @@ function tick() {
     }
 
     const previous = storedUserId();
-    const realLogin = sawAuthScreen || (previous > 0 && previous !== id);
+    const realLogin = authIntent || (previous > 0 && previous !== id);
 
-    // * Открытие клиента с сохранённой сессией: чаты появились сразу,
-    // * экрана входа не было, аккаунт тот же — это не вход, а запуск.
+    // * Просто открыли клиент с сохранённой сессией — это не вход.
     if (!realLogin) return;
 
-    const reason = sawAuthScreen ? 'вход' : 'смена аккаунта';
-    sawAuthScreen = false;
-    clearAuthSeen();
+    const reason = authIntent ? 'вход' : 'смена аккаунта';
+    authIntent = false;
+    clearAuthIntent();
 
     // Запоминаем ДО отправки, чтобы не отправить дважды на следующем тике.
     storeUserId(id);
@@ -564,11 +552,10 @@ async function boot() {
             log('inspect error:', error && error.message);
         }
         log('хук установлен, модуль:', modulePath);
-        // * метку прошлого входа НЕ сбрасываем: обычный запуск приложения —
-        // * не вход. Уведомление уйдёт только при реальной авторизации.
-        // * Экран входа, увиденный до перезагрузки интерфейса, не теряем.
-        sawAuthScreen = authSeenInThisRun();
-        if (sawAuthScreen) {
+        // * экран входа, показанный до перезагрузки интерфейса, не теряем:
+        // * tweb перезагружает страницу после авторизации
+        authIntent = storedAuthIntent();
+        if (authIntent) {
             log('в этом окне уже показывался экран входа');
         }
         setInterval(tick, TICK_MS);
