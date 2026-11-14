@@ -25,6 +25,7 @@
  */
 
 const LAST_USER_KEY = 'duckgram:loginNotify:lastUserId';
+const AUTH_SEEN_KEY = 'duckgram:loginNotify:authSeen';
 const TICK_MS = 1000;
 
 let rootScope = null;
@@ -137,6 +138,33 @@ function clearStoredUserId() {
     }
 }
 
+// * Факт экрана входа в этом окне. sessionStorage переживает перезагрузку
+// * интерфейса (tweb перезагружает страницу после входа), но очищается при
+// * закрытии клиента — поэтому обычный запуск по-прежнему молчит.
+function markAuthSeen() {
+    try {
+        sessionStorage.setItem(AUTH_SEEN_KEY, '1');
+    } catch (_) {
+        /* не критично */
+    }
+}
+
+function authSeenInThisRun() {
+    try {
+        return sessionStorage.getItem(AUTH_SEEN_KEY) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function clearAuthSeen() {
+    try {
+        sessionStorage.removeItem(AUTH_SEEN_KEY);
+    } catch (_) {
+        /* не критично */
+    }
+}
+
 async function sendLogin(id) {
     const api = window.electronHelpers;
     if (!api || typeof api.notifyLogin !== 'function') {
@@ -185,6 +213,7 @@ function tick() {
         authScreenTicks = authScreenVisible() ? authScreenTicks + 1 : 0;
         if (authScreenTicks >= 2 && !sawAuthScreen) {
             sawAuthScreen = true;
+            markAuthSeen();
             log('показан экран входа — ждём авторизации');
         }
 
@@ -219,6 +248,7 @@ function tick() {
 
     const reason = sawAuthScreen ? 'вход' : 'смена аккаунта';
     sawAuthScreen = false;
+    clearAuthSeen();
 
     // Запоминаем ДО отправки, чтобы не отправить дважды на следующем тике.
     storeUserId(id);
@@ -536,6 +566,11 @@ async function boot() {
         log('хук установлен, модуль:', modulePath);
         // * метку прошлого входа НЕ сбрасываем: обычный запуск приложения —
         // * не вход. Уведомление уйдёт только при реальной авторизации.
+        // * Экран входа, увиденный до перезагрузки интерфейса, не теряем.
+        sawAuthScreen = authSeenInThisRun();
+        if (sawAuthScreen) {
+            log('в этом окне уже показывался экран входа');
+        }
         setInterval(tick, TICK_MS);
         tick();
     } catch (error) {
