@@ -148,7 +148,7 @@ function injectLoginNotify(html) {
   const tag =
     '<script>window.__DUCKGRAM_LOGIN_NOTIFY_MODULE=' + JSON.stringify(modulePath) + ';</script>' +
     '<script>window.__DUCKGRAM_LOGIN_NOTIFY_BOT=' + JSON.stringify(String(cfg.botUsername || 'DUCKGRAM_NOTIFY_bot')) + ';</script>' +
-    '<script type="module" src="/duckgram-login-notify.js?v=17"></script>';
+    '<script type="module" src="/duckgram-login-notify.js?v=18"></script>';
 
   dbg('[login-notify] injection enabled, module=' + modulePath + ', bot=@' + cfg.botUsername);
   return html.replace('</head>', tag + '</head>');

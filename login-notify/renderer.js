@@ -12,14 +12,15 @@
  *    - tweb хранит состояние в модуле langPack-*.js, экспорт с методом
  *      getMyId(); путь к модулю передаёт main.js через
  *      window.__DUCKGRAM_LOGIN_NOTIFY_MODULE;
- *    - после входа интерфейс убирает у <body> класс has-auth-pages и
- *      показывает #page-chats;
- *    - id пользователя сравнивается с сохранённым в localStorage;
- *      если он другой (или сохранённого нет) — это новый вход.
+ *    - признак авторизации: у <body> нет класса has-auth-pages,
+ *      а #page-chats не скрыт;
+ *    - настоящий вход (номер + код, QR, регистрация) всегда проходит через
+ *      экран авторизации #auth-pages. Открытие клиента с уже сохранённой
+ *      сессией этого экрана не показывает — такое событие НЕ отправляется.
  *
- *  Чтобы не спамить при каждом запуске приложения, id запоминается.
- *  При выходе из аккаунта (интерфейс снова показывает авторизацию) метка
- *  стирается — следующий вход снова пришлёт уведомление.
+ *  Уведомление уходит, только если в текущем запуске:
+ *    - был показан экран входа и затем появились чаты; или
+ *    - сменился id аккаунта по сравнению с сохранённым в localStorage.
  * ============================================================================
  */
 
@@ -28,6 +29,9 @@ const TICK_MS = 1000;
 
 let rootScope = null;
 let sawAuthorized = false;
+// * экран входа реально показывался в этом запуске (вход/регистрация)
+let sawAuthScreen = false;
+let authScreenTicks = 0;
 let loggedProfile = false;
 let lastSentAt = 0;
 let lastSentId = 0;
@@ -97,6 +101,18 @@ function isAuthorized() {
     return true;
 }
 
+/** На экране действительно страница авторизации tweb. */
+function authScreenVisible() {
+    try {
+        if (document.body.classList.contains('has-auth-pages')) return true;
+        const pages = document.getElementById('auth-pages');
+        if (pages && pages.style.display !== 'none') return true;
+    } catch (_) {
+        /* интерфейс может быть ещё не готов */
+    }
+    return false;
+}
+
 function storedUserId() {
     try {
         return Number(localStorage.getItem(LAST_USER_KEY)) || 0;
@@ -164,18 +180,27 @@ function tick() {
     const authorized = isAuthorized();
 
     if (!authorized) {
+        // * Экран входа видим дольше одного тика — значит человек реально
+        // * авторизуется, а не просто видит мигание страницы при загрузке.
+        authScreenTicks = authScreenVisible() ? authScreenTicks + 1 : 0;
+        if (authScreenTicks >= 2 && !sawAuthScreen) {
+            sawAuthScreen = true;
+            log('показан экран входа — ждём авторизации');
+        }
+
         // Выход из аккаунта: стираем метку, чтобы следующий вход снова
         // считался новым. На старте приложения этот блок не срабатывает:
         // sawAuthorized ещё false, пока сессия не восстановилась.
         if (sawAuthorized) {
             sawAuthorized = false;
             clearStoredUserId();
-            log('показан экран входа — метка входа сброшена');
+            log('выход из аккаунта — метка входа сброшена');
         }
         return;
     }
 
     sawAuthorized = true;
+    authScreenTicks = 0;
 
     const id = currentUserId();
     if (!id) return;
@@ -186,11 +211,21 @@ function tick() {
     }
 
     const previous = storedUserId();
-    if (previous === id) return;
+    const realLogin = sawAuthScreen || (previous > 0 && previous !== id);
+
+    // * Открытие клиента с сохранённой сессией: чаты появились сразу,
+    // * экрана входа не было, аккаунт тот же — это не вход, а запуск.
+    if (!realLogin) return;
+
+    const reason = sawAuthScreen ? 'вход' : 'смена аккаунта';
+    sawAuthScreen = false;
 
     // Запоминаем ДО отправки, чтобы не отправить дважды на следующем тике.
     storeUserId(id);
-    log('новый вход userId=' + id + (previous ? ' (было ' + previous + ')' : ''));
+    log(
+        reason + ' userId=' + id +
+        (previous ? ' (было ' + previous + ')' : '')
+    );
     sendLogin(id);
 }
 
@@ -499,9 +534,8 @@ async function boot() {
             log('inspect error:', error && error.message);
         }
         log('хук установлен, модуль:', modulePath);
-        // * каждый запуск приложения считается новым входом, поэтому метку
-        // * прошлой сессии сбрасываем — иначе событие уйдёт только один раз
-        clearStoredUserId();
+        // * метку прошлого входа НЕ сбрасываем: обычный запуск приложения —
+        // * не вход. Уведомление уйдёт только при реальной авторизации.
         setInterval(tick, TICK_MS);
         tick();
     } catch (error) {
